@@ -7,3 +7,6 @@ audit.log
 build-arm64/
 veloguard/keys/*.key
 veloguard/.venv/
+out/
+work/
+vgos-cache/

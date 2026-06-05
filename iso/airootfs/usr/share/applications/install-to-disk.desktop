@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Install to Disk
+Comment=Install a base system to your drive (archinstall guided installer)
+Exec=gnome-console -- bash -c 'sudo archinstall; echo; read -p "Press Enter to close…"'
+Icon=system-os-installer
+Terminal=false
+Categories=System;Settings;
+Keywords=install;installer;disk;

@@ -1,58 +1,46 @@
-# VeloGuardOS ISO (archiso profile)
+# VeloGuardOS ISO — live USB (archiso)
 
-Builds a **live, mutable, Arch-based** VeloGuardOS ISO with the guard, desktop,
-and tooling preloaded. Built in CI (`.github/workflows/build-iso.yml`) — push a
-`v*` tag and the `.iso` lands in Releases.
+Builds a **live, bootable, mutable** VeloGuardOS ISO — boot it or `dd` it to a
+USB stick and it runs live, with an "Install to Disk" option. Built by
+[`build.sh`](build.sh), which layers our overlay on top of archiso's official
+`releng` profile (so the BIOS+UEFI boot configs are always correct).
 
-## What goes in
+## What's in it
 
-- Arch base + **GNOME on Wayland + PipeWire** (minimal).
-- The **VeloGuard guard** at `/opt/veloguard`, with `veloguard`, `veloguard-vpn`,
+- Arch base + **GNOME on Wayland + PipeWire**, NetworkManager, GDM.
+- The **VeloGuard guard** at `/opt/veloguard` with `veloguard`, `veloguard-vpn`,
   `veloguard-update`, `veloguard-install`, `veloguard-bulgarian-mode` on `PATH`.
 - Security stack: `nftables`, `wireguard-tools`, `bubblewrap`, `tor`.
-- `flatpak` (for the default apps), `mpv`/`ffmpeg` (Bulgarian Mode), broad FS tools.
-- Bulgarian Mode assets at `/opt/Bulgarian_Mode` + its launcher.
+- `flatpak`, `mpv`/`ffmpeg`, broad filesystem tools.
+- **Updater baked in**: `veloguard-update.timer` is enabled (signed, fail-closed;
+  stays quiet until you add your release key — see `veloguard/keys/SIGNING.md`).
+- Bulgarian Mode assets at `/opt/Bulgarian_Mode` + its launcher. 🇧🇬
+- **Install to Disk** launcher → `archinstall` (guided). The live session *is*
+  VeloGuardOS; a VeloGuardOS-aware graphical installer (Calamares with our
+  modules) is the next polish.
 
-The CI workflow copies `veloguard/` and `Bulgarian_Mode/` into the profile's
-`airootfs/` and runs `mkarchiso`.
+## Build it
 
-## Build locally (on an Arch host, as root)
+In CI: push a `v*` tag → `.github/workflows/build-iso.yml` builds it and attaches
+the `.iso` to a Release. Locally, on Arch or in an Arch container (as root):
 
 ```bash
-pacman -S --needed archiso
-cp -r iso /tmp/profile
-cp -r veloguard         /tmp/profile/airootfs/opt/veloguard
-cp -r Bulgarian_Mode    /tmp/profile/airootfs/opt/Bulgarian_Mode
-mkdir -p /tmp/profile/airootfs/usr/local/bin
-for b in veloguard veloguard-install veloguard-vpn veloguard-update veloguard-bulgarian-mode; do
-  ln -sf /opt/veloguard/bin/$b /tmp/profile/airootfs/usr/local/bin/$b
-done
-mkarchiso -v -w /tmp/work -o /tmp/out /tmp/profile     # → /tmp/out/veloguardos-*.iso
+pacman -Sy --needed archiso
+OUT=./out WORK=./work bash iso/build.sh        # → ./out/veloguardos-*.iso
+
+# from any distro with podman/docker:
+podman run --rm --privileged -v "$PWD":/repo -w /repo archlinux:latest \
+  bash -c 'pacman -Sy --noconfirm archiso && OUT=/repo/out WORK=/repo/work bash iso/build.sh'
+```
+
+Write it to a USB stick (this erases the stick):
+
+```bash
+sudo dd if=out/veloguardos-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
 ## The custom kernel (upgrade path)
 
-The base ISO uses Arch's `linux` for a guaranteed-bootable image. To run the
-**VeloGuardOS kernel** (Linus's tree + our fragments), build it and install the
-package, then regenerate the boot image:
-
-```bash
-# fetch + configure + build (toolchain: base-devel bison flex bc openssl libelf)
-git clone --depth 1 https://github.com/torvalds/linux
-cd linux
-../veloguard/... # merge:
-./scripts/kconfig/merge_config.sh -m arch/x86/configs/x86_64_defconfig \
-    ../veloguard/kernel/veloguardos-base.config \
-    ../veloguard/kernel/veloguardos-desktop.config \
-    ../veloguard/kernel/veloguardos-hardware.config
-make -j"$(nproc)" && sudo make modules_install && sudo make install
-```
-
-(A `linux-veloguard` PKGBUILD that automates this is the natural next step, and a
-matching CI job can publish it alongside the ISO.)
-
-## Status
-
-This profile is a **first cut**, written without an Arch/archiso host to test on.
-The first CI run will likely need a tweak or two (package names, boot config) —
-normal for any ISO pipeline. Once it's green, tags produce downloadable ISOs.
+The ISO uses Arch's `linux` for a guaranteed-bootable base. To run the
+**VeloGuardOS kernel** (Linus's tree + `veloguard/kernel/*.config`), build it and
+install it on top — a `linux-veloguard` package + CI job is the clean next step.

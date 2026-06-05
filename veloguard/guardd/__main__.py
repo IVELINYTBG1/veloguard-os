@@ -360,6 +360,12 @@ def _update(rest: list[str]) -> int:
         domain = rest[i + 1] if i + 1 < len(rest) else "all"
 
     try:
+        if sub in ("check", "apply") and not updater.PUBKEY.exists():
+            print("updater: not configured yet — add your release key to "
+                  "veloguard/keys/veloguard-release.pem and set VELOGUARD_UPDATE_URL "
+                  "(see keys/SIGNING.md). Nothing to do.")
+            record({"control": "update", "sub": sub, "result": "not_configured"})
+            return 0
         if sub == "check":
             res = updater.check()
             if as_json:

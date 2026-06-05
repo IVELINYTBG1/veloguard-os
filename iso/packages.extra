@@ -1,0 +1,39 @@
+# VeloGuardOS — packages appended to archiso 'releng' base (base/linux/syslinux/
+# networking/archinstall already come from releng). Keep it lean ("like Arch").
+
+# networking for the desktop
+networkmanager
+
+# desktop: Wayland + PipeWire + GNOME (minimal)
+gnome-shell
+gdm
+nautilus
+gnome-console
+gnome-control-center
+gnome-software
+xdg-desktop-portal-gnome
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+mesa
+
+# VeloGuard security stack (kernel-side userspace the guard drives)
+nftables
+wireguard-tools
+bubblewrap
+tor
+
+# universal package formats (default apps install via flatpak on first run)
+flatpak
+
+# Bulgarian Mode + media
+mpv
+ffmpeg
+
+# extra filesystem support
+exfatprogs
+ntfs-3g
+
+# guard runtime
+python
