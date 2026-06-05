@@ -1,22 +1,3 @@
-VeloGuardOS
-Copyright (C) 2026 The VeloGuardOS authors and contributors.
-
-VeloGuardOS is free software: you can redistribute it and/or modify it under the
-terms of the GNU General Public License, version 2, as published by the Free
-Software Foundation — the same license as the Linux kernel it builds upon.
-
-  * The VeloGuardOS components in this repository (the guard daemon, provisioning
-    scripts, kernel CONFIG fragments, UI, updater, and docs) are licensed
-    GPL-2.0-only by the VeloGuardOS authors.
-  * The Linux kernel source is NOT vendored here. It is fetched from Linus
-    Torvalds' tree at build time and remains GPL-2.0 (C) its own authors. Our
-    kernel customizations are config fragments under veloguard/kernel/.
-
-SPDX-License-Identifier: GPL-2.0-only
-
-The full text of the GNU General Public License, version 2, follows.
-======================================================================
-
 		    GNU GENERAL PUBLIC LICENSE
 		       Version 2, June 1991
 
