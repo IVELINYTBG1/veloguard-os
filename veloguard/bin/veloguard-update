@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#
+# veloguard-update — stable entry point for the updater (and the update agent).
+# Thin wrapper over `guardd update`, so it runs on the compatible-Python venv.
+#
+#   veloguard-update check --json        # read-only; safe to poll
+#   veloguard-update apply --domain veloguard --apply --yes
+#   veloguard-update rollback
+#
+exec "$(dirname "$0")/veloguard" update "$@"

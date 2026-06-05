@@ -1,0 +1,16 @@
+{
+  "allowed_actions": ["block_ip", "unblock_ip", "list_blocked",
+    "vpn_up", "vpn_down", "quarantine", "release_quarantine", "kill_quarantine",
+    "sandbox_run"],
+  "require_approval": ["block_ip", "unblock_ip", "vpn_down",
+    "release_quarantine", "kill_quarantine"],
+  "protected_cidrs": [
+    "127.0.0.0/8",
+    "::1/128",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "169.254.0.0/16"
+  ],
+  "rate_limit": { "max_actions": 20, "window_seconds": 60 }
+}

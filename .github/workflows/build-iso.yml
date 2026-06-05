@@ -1,0 +1,62 @@
+name: Build VeloGuardOS ISO
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write          # needed to attach the ISO to a Release
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged   # mkarchiso needs loop devices / mounts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install archiso
+        run: pacman -Sy --noconfirm --needed archiso git
+
+      - name: Assemble the profile (bake in our files)
+        run: |
+          set -eux
+          cp -r iso /tmp/profile
+          mkdir -p /tmp/profile/airootfs/opt /tmp/profile/airootfs/usr/local/bin \
+                   /tmp/profile/airootfs/usr/share/applications
+          cp -r veloguard      /tmp/profile/airootfs/opt/veloguard
+          cp -r Bulgarian_Mode /tmp/profile/airootfs/opt/Bulgarian_Mode
+          # drop dev cruft
+          rm -rf /tmp/profile/airootfs/opt/veloguard/.venv \
+                 /tmp/profile/airootfs/opt/veloguard/**/__pycache__ || true
+          # tools on PATH (the launcher cd's into /opt/veloguard)
+          for b in veloguard veloguard-install veloguard-vpn veloguard-update \
+                   veloguard-netwatch veloguard-bulgarian-mode; do
+            ln -sf /opt/veloguard/bin/$b /tmp/profile/airootfs/usr/local/bin/$b
+          done
+          install -Dm644 veloguard/ui/bulgarian-mode.desktop \
+            /tmp/profile/airootfs/usr/share/applications/bulgarian-mode.desktop
+          # enable NetworkManager + GDM in the live system
+          mkdir -p /tmp/profile/airootfs/etc/systemd/system/multi-user.target.wants
+          ln -sf /usr/lib/systemd/system/NetworkManager.service \
+            /tmp/profile/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service
+          ln -sf /usr/lib/systemd/system/gdm.service \
+            /tmp/profile/airootfs/etc/systemd/system/display-manager.service
+
+      - name: Build the ISO
+        run: mkarchiso -v -w /tmp/work -o /tmp/out /tmp/profile
+
+      - name: Upload ISO as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: veloguardos-iso
+          path: /tmp/out/*.iso
+          if-no-files-found: error
+
+      - name: Attach ISO to the Release (on tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: /tmp/out/*.iso

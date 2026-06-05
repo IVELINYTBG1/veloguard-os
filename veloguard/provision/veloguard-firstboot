@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#
+# VeloGuardOS first-boot setup-screen launcher.
+# Runs the AI-plane wizard ONCE on first boot, then marks itself done so it
+# never nags again. Re-run `guardd setup` (or this script after deleting the
+# marker) any time to reconfigure.
+#
+set -e
+
+MARKER="${VELOGUARD_MARKER:-/var/lib/veloguard/.setup-done}"
+HOME_DIR="${VELOGUARD_HOME:-/opt/veloguard}"
+[ -d "$HOME_DIR" ] || HOME_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [ -f "$MARKER" ]; then
+    exit 0
+fi
+
+cd "$HOME_DIR"
+python3 -m guardd setup
+
+mkdir -p "$(dirname "$MARKER")"
+touch "$MARKER"

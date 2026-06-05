@@ -1,0 +1,30 @@
+# VeloGuardOS first-boot setup screen.
+# Drives the AI-plane wizard on the primary console (tty1) the first time the
+# system boots, then steps aside. This is the "setup screen" the user sees.
+#
+# Install on the image:
+#   install -m755 veloguard-firstboot /usr/local/bin/veloguard-firstboot
+#   install -m644 veloguard-firstboot.service /etc/systemd/system/
+#   systemctl enable veloguard-firstboot.service
+#
+[Unit]
+Description=VeloGuardOS first-boot setup screen
+# Skip entirely once setup has been completed.
+ConditionPathExists=!/var/lib/veloguard/.setup-done
+# Local model path benefits from ollama being up; harmless if absent.
+After=ollama.service systemd-user-sessions.service
+Wants=ollama.service
+
+[Service]
+Type=oneshot
+# Make it a real interactive screen on the console.
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+ExecStart=/usr/local/bin/veloguard-firstboot
+
+[Install]
+WantedBy=multi-user.target

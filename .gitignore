@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+*.bak
+audit.log
+*.iso
+build-arm64/
+veloguard/keys/*.key
+veloguard/.venv/

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#
+# NetworkManager dispatcher hook → triggers VeloGuard auto-protect on Wi-Fi up.
+# Install:
+#   install -m755 veloguard-nm-dispatcher \
+#       /etc/NetworkManager/dispatcher.d/90-veloguard
+#
+# NM calls dispatchers as:  <script> <interface> <action>
+#
+iface="${1:-}"; action="${2:-}"
+case "$action" in
+  up|vpn-up|connectivity-change)
+    case "$iface" in
+      wl*|wlan*|wlp*) /usr/local/bin/veloguard-netwatch || true ;;
+    esac
+    ;;
+esac

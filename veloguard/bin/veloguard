@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# veloguard — the guard launcher. Prefers the compatible-Python venv (so
+# ChromaDB / semantic memory works even when the system Python is too new),
+# and falls back to the system python3 otherwise.
+#
+#   veloguard "block 203.0.113.10"
+#   veloguard setup
+#   veloguard honeypot --analyze
+#
+set -euo pipefail
+HOME_DIR="${VELOGUARD_HOME:-$(cd "$(dirname "$0")/.." && pwd)}"
+VENV="${VELOGUARD_VENV:-$HOME_DIR/.venv}"
+
+PY="python3"
+[ -x "$VENV/bin/python" ] && PY="$VENV/bin/python"
+
+cd "$HOME_DIR"
+exec "$PY" -m guardd "$@"

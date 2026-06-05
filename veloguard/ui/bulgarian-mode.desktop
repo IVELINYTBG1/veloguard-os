@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Bulgarian Mode
+Comment=🇧🇬 Folk wallpaper slideshow + shuffled music — click to toggle
+Exec=veloguard-bulgarian-mode toggle
+Icon=preferences-desktop-wallpaper
+Terminal=false
+Categories=Utility;GTK;
+Keywords=bulgaria;easteregg;wallpaper;music;
+# Install so it shows as a button in the app grid / control panel:
+#   install -m644 bulgarian-mode.desktop /usr/share/applications/
+#   install -m755 ../bin/veloguard-bulgarian-mode /usr/local/bin/
+#   install -d /usr/share/veloguard && cp -r <repo>/Bulgarian_Mode /usr/share/veloguard/

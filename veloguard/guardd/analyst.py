@@ -1,0 +1,73 @@
+"""AI attack analyst — turns a raw honeypot capture into a human report.
+
+Tiers the depth of analysis by what the user is running. The bonus for the tech
+community: run a **local high-end model** and you get the deepest diagnosis,
+entirely on your own hardware, nothing leaving the box.
+
+  deep      local (ollama) + a high-end model  → full diagnosis: technique,
+            likely CVE, MITRE-style mapping, IOCs, step-by-step remediation.
+  standard  any other LLM (small local / cloud) → classification, severity,
+            IOCs, one recommendation.
+  basic     no model (mock)                     → offline heuristic triage.
+"""
+
+from __future__ import annotations
+
+_HIGHEND = ("70b", "72b", "65b", "34b", "33b", "30b", "27b", "405b",
+            "mixtral", "-large", "command-r-plus", "qwen2.5:32")
+
+
+def is_highend(model: str | None) -> bool:
+    m = (model or "").lower()
+    return any(k in m for k in _HIGHEND)
+
+
+def analysis_tier(provider: str, model: str | None) -> str:
+    if provider == "ollama" and is_highend(model):
+        return "deep"            # the bonus: local + powerful
+    if provider in ("ollama", "claude", "openai"):
+        return "standard"
+    return "basic"               # mock / no model
+
+
+_SYSTEMS = {
+    "deep": (
+        "You are a senior incident-response analyst reading a honeypot capture. "
+        "Produce a precise diagnosis: (1) attack class & technique, (2) the most "
+        "likely CVE or named exploit if any, (3) MITRE ATT&CK tactic/technique, "
+        "(4) indicators of compromise (IPs, payload hashes, URLs, user-agents), "
+        "(5) severity with justification, (6) concrete step-by-step remediation. "
+        "Be specific and technical; this reader is an expert."),
+    "standard": (
+        "You are a security analyst reading a honeypot capture. In a short report: "
+        "classify the attack, give a severity (low/medium/high/critical), list the "
+        "indicators of compromise, and give one clear recommended action."),
+}
+
+_MAXTOK = {"deep": 900, "standard": 450}
+
+
+def _format_capture(cap: dict) -> str:
+    data = cap.get("data", "")
+    if len(data) > 4000:
+        data = data[:4000] + "…(truncated)"
+    return (f"Honeypot service: {cap.get('service')} (port {cap.get('dst_port')})\n"
+            f"Source: {cap.get('src_ip')}:{cap.get('src_port')}\n"
+            f"Bytes received: {cap.get('bytes')}\n"
+            f"--- payload begins ---\n{data}\n--- payload ends ---")
+
+
+def analyze_capture(cap: dict, adapter, provider: str, model: str | None) -> dict:
+    """Return {tier, report}. Falls back to heuristic if the model call fails."""
+    tier = analysis_tier(provider, model)
+    user = _format_capture(cap)
+    if tier == "basic":
+        report = adapter.complete("", user)   # mock → heuristic
+    else:
+        try:
+            report = adapter.complete(_SYSTEMS[tier], user, _MAXTOK[tier])
+        except Exception as e:
+            from .ai_adapter import _heuristic_report
+            report = (f"[AI analysis failed: {e}]\n" + _heuristic_report(user))
+            tier = "basic"
+    return {"tier": tier, "report": report, "model": model, "provider": provider}

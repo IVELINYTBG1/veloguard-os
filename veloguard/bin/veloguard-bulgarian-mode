@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+#
+# 🇧🇬 Bulgarian Mode — an easter egg. UI-LEVEL ONLY (no kernel involvement).
+#
+# ON  : the wallpaper becomes a random slideshow of Bulgarian_Mode/wallpapers,
+#       and Bulgarian_Mode/Music plays on shuffle — both loop until you turn it
+#       off. OFF: music stops, slideshow stops, your wallpaper is restored.
+#
+#   veloguard-bulgarian-mode on | off | toggle | status | selftest
+#
+set -uo pipefail
+
+DRY="${VELOGUARD_BGMODE_DRYRUN:-}"
+INTERVAL="${VELOGUARD_BGMODE_SECONDS:-20}"
+STATE="${XDG_RUNTIME_DIR:-/tmp}/veloguard-bgmode"
+SAVED="$STATE/wallpaper.saved"
+
+# Find the assets folder: env override → installed path → repo folder.
+ASSETS=""
+for d in "${VELOGUARD_BG_DIR:-}" "/usr/share/veloguard/Bulgarian_Mode" \
+         "$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd)/Bulgarian_Mode"; do
+  [ -n "$d" ] && [ -d "$d" ] && { ASSETS="$d"; break; }
+done
+WALL="$ASSETS/wallpapers"
+MUSIC="$ASSETS/Music"
+IMG_RE='.*\.\(jpg\|jpeg\|png\|webp\|gif\)'
+AUD_RE='.*\.\(mp3\|flac\|ogg\|wav\|m4a\|opus\)'
+
+say()    { printf '🇧🇬 %s\n' "$*"; }
+images() { find "$WALL" -type f -iregex "$IMG_RE" 2>/dev/null; }
+songs()  { find "$MUSIC" -type f -iregex "$AUD_RE" 2>/dev/null; }
+notify() { command -v notify-send >/dev/null && notify-send "$@" 2>/dev/null || true; }
+running(){ [ -f "$STATE/wall.pid" ] && kill -0 "$(cat "$STATE/wall.pid" 2>/dev/null)" 2>/dev/null; }
+
+# --- the two background loops (re-exec'd as hidden subcommands) -------------
+wall_loop() {
+  while :; do
+    img="$(images | shuf -n1)"
+    if [ -n "$img" ]; then
+      if [ -n "$DRY" ]; then echo "[dry] wallpaper → $(basename "$img")"
+      else
+        gsettings set org.gnome.desktop.background picture-uri "file://$img"
+        gsettings set org.gnome.desktop.background picture-uri-dark "file://$img"
+        gsettings set org.gnome.desktop.background picture-options zoom
+      fi
+    fi
+    sleep "$INTERVAL"
+  done
+}
+
+music_loop() {
+  if [ -z "$DRY" ] && command -v mpv >/dev/null; then
+    exec mpv --no-video --shuffle --loop-playlist --really-quiet "$MUSIC"/*
+  fi
+  while :; do                                  # reshuffle every pass
+    songs | shuf | while IFS= read -r s; do
+      if [ -n "$DRY" ]; then echo "[dry] play → $(basename "$s")"; sleep 0.2
+      else ffplay -nodisp -autoexit -loglevel quiet "$s" </dev/null >/dev/null 2>&1 || true
+      fi
+    done
+    songs | grep -q . || { sleep 2; }          # nothing to play; idle
+  done
+}
+
+start() {
+  [ -n "$ASSETS" ] || { echo "Bulgarian_Mode assets not found (set VELOGUARD_BG_DIR)"; exit 1; }
+  running && { say "already ON"; exit 0; }
+  mkdir -p "$STATE"
+  if [ -n "$DRY" ]; then echo "''" > "$SAVED"
+  else gsettings get org.gnome.desktop.background picture-uri > "$SAVED" 2>/dev/null || echo "''" > "$SAVED"; fi
+  setsid "$0" __wall  >/dev/null 2>&1 < /dev/null & echo $! > "$STATE/wall.pid"
+  setsid "$0" __music >/dev/null 2>&1 < /dev/null & echo $! > "$STATE/music.pid"
+  say "Bulgarian Mode ON — folk slideshow + shuffled music. Честито! 🎉"
+  notify "🇧🇬 Bulgarian Mode ON" "Folk slideshow + shuffled music"
+}
+
+stop() {
+  for p in wall music; do
+    f="$STATE/$p.pid"; [ -f "$f" ] || continue
+    pid="$(cat "$f" 2>/dev/null)"
+    [ -n "$pid" ] && { kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true; }
+    rm -f "$f"
+  done
+  pkill -f "$0 __music" 2>/dev/null || true
+  if [ -f "$SAVED" ]; then
+    val="$(cat "$SAVED")"
+    if [ -n "$DRY" ]; then echo "[dry] restore wallpaper → $val"
+    else gsettings set org.gnome.desktop.background picture-uri "$val" 2>/dev/null || true; fi
+    rm -f "$SAVED"
+  fi
+  say "Bulgarian Mode OFF — wallpaper restored."
+  notify "Bulgarian Mode OFF"
+}
+
+selftest() {
+  echo "assets : ${ASSETS:-NOT FOUND}"
+  echo "images : $(images | wc -l)    songs: $(songs | wc -l)"
+  echo "random wallpaper pick: $(images | shuf -n1 | xargs -r basename)"
+  echo "shuffled playlist:"; songs | shuf | while IFS= read -r s; do echo "  • $(basename "$s")"; done
+}
+
+case "${1:-toggle}" in
+  on|start)   start ;;
+  off|stop)   stop ;;
+  toggle)     if running; then stop; else start; fi ;;
+  status)     running && say "ON" || say "OFF" ;;
+  selftest)   selftest ;;
+  __wall)     wall_loop ;;
+  __music)    music_loop ;;
+  *) echo "usage: veloguard-bulgarian-mode on|off|toggle|status|selftest" ;;
+esac

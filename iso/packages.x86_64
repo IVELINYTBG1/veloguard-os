@@ -1,0 +1,52 @@
+# VeloGuardOS live ISO — package set (Arch base; mutable, "lightweight like Arch").
+# Uses Arch's linux kernel for a reliable bootable base; the custom VeloGuardOS
+# kernel (Linus's tree + veloguard/kernel/*.config) is the documented upgrade
+# path on top — see iso/README.md.
+
+# --- base + boot ---
+base
+linux
+linux-firmware
+mkinitcpio
+mkinitcpio-archiso
+intel-ucode
+amd-ucode
+networkmanager
+sudo
+nano
+git
+python
+which
+
+# --- desktop: Wayland + PipeWire + GNOME (minimal) ---
+gnome-shell
+gdm
+nautilus
+gnome-console
+gnome-control-center
+gnome-software
+xdg-desktop-portal-gnome
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+mesa
+
+# --- VeloGuard security stack (kernel-side userspace) ---
+nftables
+wireguard-tools
+bubblewrap
+tor
+
+# --- universal package formats ---
+flatpak
+
+# --- Bulgarian Mode + media ---
+mpv
+ffmpeg
+
+# --- filesystems (mount anyone's disk) ---
+btrfs-progs
+dosfstools
+exfatprogs
+ntfs-3g

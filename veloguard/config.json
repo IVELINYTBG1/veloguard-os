@@ -1,0 +1,5 @@
+{
+  "_comment": "Pick your AI plane once. CLI --adapter overrides this.",
+  "_choices": "mock (offline) | ollama (local, private) | claude (API) | openai (API/Codex-compatible)",
+  "adapter": "mock"
+}

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+#
+# veloguard-netwatch — run on every Wi-Fi connection. Reads the current SSID +
+# security, hands them to the guard's network classifier, and lets it decide:
+# trusted → nothing; untrusted/open → auto VPN; unknown → fail safe (VPN).
+#
+# Installed as a NetworkManager dispatcher hook (see veloguard-nm-dispatcher).
+# Runs as root from NM, so it uses a SYSTEM state dir for its trust decisions.
+#
+set -euo pipefail
+export VELOGUARD_STATE="${VELOGUARD_STATE:-/var/lib/veloguard}"
+HOME_DIR="${VELOGUARD_HOME:-/opt/veloguard}"
+[ -d "$HOME_DIR" ] || HOME_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+command -v nmcli >/dev/null || { echo "nmcli not found" >&2; exit 0; }
+
+# Active Wi-Fi line: ACTIVE:SSID:SECURITY
+line="$(nmcli -t -f ACTIVE,SSID,SECURITY dev wifi 2>/dev/null | awk -F: '$1=="yes"{print; exit}')"
+ssid="$(printf '%s' "$line" | cut -d: -f2)"
+sec="$(printf '%s' "$line" | cut -d: -f3)"
+[ -n "$ssid" ] || exit 0   # not on Wi-Fi (e.g. wired) — nothing to do
+
+cd "$HOME_DIR"
+exec python3 -m guardd net --ssid "$ssid" --security "${sec:-open}" --yes --apply

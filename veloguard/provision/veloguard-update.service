@@ -1,0 +1,13 @@
+# VeloGuardOS — periodic update CHECK (read-only, signed, never auto-applies).
+# Install:
+#   install -m644 veloguard-update.{service,timer} /etc/systemd/system/
+#   systemctl enable --now veloguard-update.timer
+[Unit]
+Description=VeloGuardOS signed update check (read-only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/veloguard-update check
+# Check only. Applying is deliberate — done by the user or the update-agent.
