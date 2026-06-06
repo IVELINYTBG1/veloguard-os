@@ -75,6 +75,22 @@ ln -sf /usr/lib/systemd/system/NetworkManager.service \
   "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
 ln -sf /usr/lib/systemd/system/gdm.service \
   "$PROFILE/airootfs/etc/systemd/system/display-manager.service"
+# Wi-Fi: make NetworkManager the SOLE manager. archiso's base enables
+# systemd-networkd + iwd; running them alongside NM leaves Wi-Fi 'unmanaged'/
+# dead on the desktop. Mask them and let NM (via wpa_supplicant) own networking.
+mkdir -p "$PROFILE/airootfs/etc/systemd/system/network-online.target.wants" \
+         "$PROFILE/airootfs/etc/systemd/system/bluetooth.target.wants"
+for svc in systemd-networkd.service systemd-networkd.socket iwd.service \
+           systemd-networkd-wait-online.service; do
+  ln -sf /dev/null "$PROFILE/airootfs/etc/systemd/system/$svc"     # mask
+done
+ln -sf /usr/lib/systemd/system/NetworkManager-wait-online.service \
+  "$PROFILE/airootfs/etc/systemd/system/network-online.target.wants/NetworkManager-wait-online.service"
+# Bluetooth: enable the service (and dbus-activated for GNOME's BT panel).
+ln -sf /usr/lib/systemd/system/bluetooth.service \
+  "$PROFILE/airootfs/etc/systemd/system/bluetooth.target.wants/bluetooth.service"
+ln -sf /usr/lib/systemd/system/bluetooth.service \
+  "$PROFILE/airootfs/etc/systemd/system/dbus-org.bluez.service"
 install -Dm644 "$REPO/veloguard/provision/veloguard-update.service" \
   "$PROFILE/airootfs/etc/systemd/system/veloguard-update.service"
 install -Dm644 "$REPO/veloguard/provision/veloguard-update.timer" \

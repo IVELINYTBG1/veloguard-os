@@ -3,6 +3,9 @@
 
 # networking for the desktop
 networkmanager
+# Bluetooth userspace (kernel btusb is in our hardware fragment / Arch kernel)
+bluez
+bluez-utils
 
 # desktop: Wayland + PipeWire + GNOME (minimal)
 gnome-shell
