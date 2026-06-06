@@ -41,6 +41,15 @@ ntfs-3g
 # guard runtime
 python
 
+# Wi-Fi backend (the real fix: NM needs wpa_supplicant or all nets show "open")
+wpa_supplicant
+
+# every distro should have git; base-devel + git = AUR works manually, and
+# build.sh also bakes in the 'yay' AUR helper from a local repo.
+git
+base-devel
+go
+
 # NOTE: Calamares (GUI installer) is staged in iso/airootfs/etc/calamares but not
 # installed yet — it isn't in Arch's repos and the Chaotic-AUR pull was flaky.
 # The live ISO uses archinstall for now; Calamares needs an AUR makepkg build.

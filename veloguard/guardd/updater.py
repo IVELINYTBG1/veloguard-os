@@ -29,7 +29,7 @@ VELOGUARD_DIR = Path(__file__).resolve().parent.parent
 KERNEL_TREE = VELOGUARD_DIR.parent
 VERSION_FILE = VELOGUARD_DIR / "VERSION"
 PUBKEY = VELOGUARD_DIR / "keys" / "veloguard-release.pem"
-DEFAULT_MANIFEST = "https://updates.veloguardos.org/manifest.json"
+DEFAULT_MANIFEST = "https://raw.githubusercontent.com/IVELINYTBG1/veloguard-os/main/manifest.json"
 
 
 class UpdateError(Exception):

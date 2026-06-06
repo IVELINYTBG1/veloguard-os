@@ -1,0 +1,9 @@
+[Unit]
+Description=VeloGuardOS data-broker opt-out (acts on the user's own data)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Nice=10
+ExecStart=/opt/veloguard/provision/veloguard-privacy-optout.sh

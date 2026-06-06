@@ -1,0 +1,8 @@
+{
+  "veloguard": {
+    "version": "0.1.0",
+    "artifact": "https://github.com/IVELINYTBG1/veloguard-os/releases/latest/download/veloguard.tar.gz",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "kernel": { "version": "7.1.0", "tag": "v7.1", "notes": "baseline" }
+}

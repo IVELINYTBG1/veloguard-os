@@ -29,9 +29,25 @@ sed -i 's/^iso_application=.*/iso_application="VeloGuardOS Live"/' "$PROFILE/pro
 sed -i 's/Arch Linux/VeloGuardOS/g' "$PROFILE"/syslinux/*.cfg 2>/dev/null || true
 sed -i 's/Arch Linux/VeloGuardOS/g' "$PROFILE"/efiboot/loader/entries/*.conf 2>/dev/null || true
 
-# (Calamares/Chaotic-AUR step removed — calamares wasn't resolving; the live ISO
-#  uses archinstall until Calamares is packaged from the AUR. The themed config +
-#  AI page stay staged under airootfs/etc/calamares for that next step.)
+# 2.5 AUR helper: it's Arch-based, so bake in 'yay'. Build it from the AUR
+#     (makepkg as a non-root user) into a LOCAL repo that pacstrap can read.
+#     Conditional: if the build fails, the ISO still ships (git + base-devel give
+#     manual AUR), so this can't break the image.
+pacman -S --noconfirm --needed git base-devel go || true
+id builder &>/dev/null || useradd -m builder
+printf 'builder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/builder
+install -d -o builder /tmp/aur
+sudo -u builder bash -c '
+  cd /tmp/aur && git clone --depth1 https://aur.archlinux.org/yay.git &&
+  cd yay && makepkg -s --noconfirm' || echo "  (yay build skipped)"
+LR="$PROFILE/local-repo"; mkdir -p "$LR"
+cp /tmp/aur/yay/*.pkg.tar.zst "$LR"/ 2>/dev/null || true
+if ls "$LR"/*.pkg.tar.zst >/dev/null 2>&1; then
+  repo-add "$LR/vglocal.db.tar.gz" "$LR"/*.pkg.tar.zst
+  printf '\n[vglocal]\nSigLevel = Optional TrustAll\nServer = file://%s\n' "$LR" \
+    >> "$PROFILE/pacman.conf"
+  echo yay >> "$PROFILE/packages.x86_64"
+fi
 
 # 3. extra packages (appended to releng's base list)
 cat "$REPO/iso/packages.extra" >> "$PROFILE/packages.x86_64"
@@ -84,6 +100,14 @@ install -Dm644 "$REPO/veloguard/provision/veloguard-update.timer" \
   "$PROFILE/airootfs/etc/systemd/system/veloguard-update.timer"
 ln -sf /etc/systemd/system/veloguard-update.timer \
   "$PROFILE/airootfs/etc/systemd/system/timers.target.wants/veloguard-update.timer"
+# Privacy: data-broker opt-out timer (no-ops until the user configures identity).
+chmod +x "$PROFILE/airootfs/opt/veloguard/provision/veloguard-privacy-optout.sh" 2>/dev/null || true
+install -Dm644 "$REPO/veloguard/provision/veloguard-privacy.service" \
+  "$PROFILE/airootfs/etc/systemd/system/veloguard-privacy.service"
+install -Dm644 "$REPO/veloguard/provision/veloguard-privacy.timer" \
+  "$PROFILE/airootfs/etc/systemd/system/veloguard-privacy.timer"
+ln -sf /etc/systemd/system/veloguard-privacy.timer \
+  "$PROFILE/airootfs/etc/systemd/system/timers.target.wants/veloguard-privacy.timer"
 
 # 7.4 identity: override Arch's os-release at boot (filesystem pkg ships its own,
 #     so an overlay file would be clobbered — do it as a boot-time service).
@@ -122,6 +146,9 @@ picture-options='zoom'
 
 [org/gnome/login-screen]
 logo='/usr/share/pixmaps/veloguardos.png'
+
+[org/gnome/shell]
+enabled-extensions=['veloguard@veloguardos']
 DCONF
 dconf compile "$PROFILE/airootfs/etc/dconf/db/local" \
               "$PROFILE/airootfs/etc/dconf/db/local.d"

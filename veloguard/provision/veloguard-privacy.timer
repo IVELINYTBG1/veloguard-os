@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the VeloGuardOS data-broker opt-out every 12 hours
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=12h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
