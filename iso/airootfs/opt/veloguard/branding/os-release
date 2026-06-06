@@ -1,0 +1,10 @@
+NAME="VeloGuardOS"
+PRETTY_NAME="VeloGuardOS"
+ID=veloguardos
+ID_LIKE=arch
+BUILD_ID=rolling
+ANSI_COLOR="38;2;23;162;184"
+HOME_URL="https://github.com/IVELINYTBG1/veloguard-os"
+SUPPORT_URL="https://github.com/IVELINYTBG1/veloguard-os"
+BUG_REPORT_URL="https://github.com/IVELINYTBG1/veloguard-os/issues"
+LOGO=veloguard

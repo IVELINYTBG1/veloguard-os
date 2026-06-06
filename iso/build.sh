@@ -25,6 +25,9 @@ sed -i 's/^iso_name=.*/iso_name="veloguardos"/'  "$PROFILE/profiledef.sh"
 sed -i 's/^iso_label=.*/iso_label="VELOGUARDOS"/' "$PROFILE/profiledef.sh"
 sed -i 's#^iso_publisher=.*#iso_publisher="VeloGuardOS <https://github.com/IVELINYTBG1/veloguard-os>"#' "$PROFILE/profiledef.sh"
 sed -i 's/^iso_application=.*/iso_application="VeloGuardOS Live"/' "$PROFILE/profiledef.sh"
+# boot-menu titles: "Arch Linux" -> "VeloGuardOS"
+sed -i 's/Arch Linux/VeloGuardOS/g' "$PROFILE"/syslinux/*.cfg 2>/dev/null || true
+sed -i 's/Arch Linux/VeloGuardOS/g' "$PROFILE"/efiboot/loader/entries/*.conf 2>/dev/null || true
 
 # 3. extra packages (appended to releng's base list)
 cat "$REPO/iso/packages.extra" >> "$PROFILE/packages.x86_64"
@@ -61,6 +64,23 @@ install -Dm644 "$REPO/veloguard/provision/veloguard-update.timer" \
   "$PROFILE/airootfs/etc/systemd/system/veloguard-update.timer"
 ln -sf /etc/systemd/system/veloguard-update.timer \
   "$PROFILE/airootfs/etc/systemd/system/timers.target.wants/veloguard-update.timer"
+
+# 7.4 identity: override Arch's os-release at boot (filesystem pkg ships its own,
+#     so an overlay file would be clobbered — do it as a boot-time service).
+cat > "$PROFILE/airootfs/etc/systemd/system/veloguard-branding.service" <<'UNIT'
+[Unit]
+Description=VeloGuardOS identity branding
+Before=gdm.service display-manager.service
+ConditionPathExists=!/var/lib/veloguard/.branded
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/bash -c 'cp -f /opt/veloguard/branding/os-release /usr/lib/os-release; mkdir -p /var/lib/veloguard; touch /var/lib/veloguard/.branded'
+[Install]
+WantedBy=multi-user.target
+UNIT
+ln -sf /etc/systemd/system/veloguard-branding.service \
+  "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/veloguard-branding.service"
 
 # 7.5 default wallpaper — system-wide via a dconf database, so every user
 #     (including the live session) gets the VeloGuardOS wallpaper out of the box.
