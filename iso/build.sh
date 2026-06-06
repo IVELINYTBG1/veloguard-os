@@ -99,6 +99,9 @@ primary-color='#13203a'
 [org/gnome/desktop/screensaver]
 picture-uri='$WP'
 picture-options='zoom'
+
+[org/gnome/login-screen]
+logo='/usr/share/pixmaps/veloguardos.png'
 DCONF
 dconf compile "$PROFILE/airootfs/etc/dconf/db/local" \
               "$PROFILE/airootfs/etc/dconf/db/local.d"
@@ -131,6 +134,19 @@ chmod 440 "$PROFILE/airootfs/etc/sudoers.d/10-wheel-nopasswd"
 mkdir -p "$PROFILE/airootfs/etc/gdm"
 printf '[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=veloguard\nWaylandEnable=true\n' \
   > "$PROFILE/airootfs/etc/gdm/custom.conf"
+
+# 7.7 boot + login ART generated from the wallpaper — replaces Arch's logo/splash.
+IM="$(command -v magick || command -v convert || true)"
+[ -n "$IM" ] || { pacman -S --noconfirm --needed imagemagick; \
+                  IM="$(command -v magick || command -v convert)"; }
+WALLSRC="$PROFILE/airootfs/usr/share/backgrounds/veloguard/default.png"
+install -d "$PROFILE/airootfs/usr/share/pixmaps"
+# BIOS (syslinux) boot-menu background — overwrite the Arch splash.
+"$IM" "$WALLSRC" -resize 640x480^ -gravity center -extent 640x480 \
+  "$PROFILE/syslinux/splash.png" || echo "  (splash gen skipped)"
+# GDM login-screen / About logo.
+"$IM" "$WALLSRC" -resize 480x \
+  "$PROFILE/airootfs/usr/share/pixmaps/veloguardos.png" || echo "  (logo gen skipped)"
 
 # 8. build the ISO
 mkdir -p "$WORK" "$OUT"
