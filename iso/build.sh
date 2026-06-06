@@ -42,7 +42,7 @@ find "$PROFILE/airootfs/opt/veloguard" -name __pycache__ -type d -exec rm -rf {}
 # 6. guard tools on PATH (the launcher cd's into /opt/veloguard)
 mkdir -p "$PROFILE/airootfs/usr/local/bin"
 for b in veloguard veloguard-install veloguard-vpn veloguard-update \
-         veloguard-netwatch veloguard-bulgarian-mode; do
+         veloguard-netwatch veloguard-bulgarian-mode veloguard-mcp; do
   ln -sf "/opt/veloguard/bin/$b" "$PROFILE/airootfs/usr/local/bin/$b"
 done
 install -Dm644 "$REPO/veloguard/ui/bulgarian-mode.desktop" \
