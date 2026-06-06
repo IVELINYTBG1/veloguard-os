@@ -112,3 +112,39 @@ VeloGuardOS components are GPL-2.0 © the VeloGuardOS authors; the kernel is
 fetched at build time and remains GPL-2.0 © its own authors.
 
 <div align="center"><sub>Built with Claude Code. For my brothers — the techies and experimenters. 🇧🇬</sub></div>
+
+## 🤖 Full agentic control via API (through the guard)
+
+Two ways an AI drives the whole machine — both go through the guard (policy,
+consent-by-autonomy, audit). There is no back door.
+
+**Attach any agent over MCP** (Claude Code, Codex, custom):
+
+```jsonc
+// .mcp.json  (see veloguard/examples/claude-code.mcp.json)
+{ "mcpServers": { "veloguard": { "command": "veloguard-mcp",
+    "env": { "VELOGUARD_AGENT_AUTONOMY": "guarded" } } } }
+```
+
+The MCP server exposes every kernel-tool action (`block_ip`, `vpn_up`,
+`quarantine`, `sandbox_run`, …) plus read tools (`status`, `classify_network`,
+`check_update`, `recall`).
+
+**Or run the built-in autonomous loop:**
+
+```bash
+guardd agent --autonomy full "lock this box down: block 203.0.113.10 and raise the VPN"
+```
+
+### Autonomy — "full" without "suicidal"
+
+| Level | Mutating tools | Destructive ops |
+|-------|----------------|-----------------|
+| `read` | disabled | — |
+| `guarded` (default) | allowed | need an interactive yes |
+| `full` | allowed | auto-approved (session = consent) |
+
+**The floor never moves**, even at `full`: `DENY` still blocks (you can't block
+loopback/your LAN even via MCP — verified), the updater stays fail-closed, and
+every single call is written to the audit log. That's the whole point of a
+*guard* — the AI gets full reach, but never unaccountable root.

@@ -22,6 +22,10 @@ Two kinds of command:
     python3 -m guardd run-safe ./sketchy.AppImage       # run isolated (AI picks tier)
     python3 -m guardd update check --json               # signed update check (agent)
     python3 -m guardd update apply --domain veloguard --apply
+
+  AGENTIC (full control via API, through the guard):
+    python3 -m guardd agent --autonomy full "lock down: block 203.0.113.10, vpn up"
+    python3 -m guardd mcp                                # MCP server for Claude Code/Codex
 """
 
 from __future__ import annotations
@@ -33,7 +37,8 @@ import shlex
 import sys
 from pathlib import Path
 
-from . import __version__, analyst, honeypot, memory, netclass, state, updater, vlayer
+from . import (__version__, agent, analyst, honeypot, memory, netclass, state,
+               updater, vlayer)
 from .actions import Action, ActionType
 from .ai_adapter import get_adapter
 from .audit import record
@@ -46,7 +51,7 @@ CONFIG_PATH = VELOGUARD_DIR / "config.json"
 
 CONTROL_VERBS = {"setup", "use", "key", "model", "status", "models",
                  "providers", "net", "honeypot", "analyze", "run-safe",
-                 "update", "help"}
+                 "update", "agent", "mcp", "help"}
 
 
 def _configured_adapter() -> str:
@@ -344,6 +349,54 @@ def _analyze(rest: list[str]) -> int:
 
 
 # ===========================================================================
+# AGENT — autonomous loop: give the active AI a goal, it drives the tools
+# ===========================================================================
+
+def _agent(rest: list[str]) -> int:
+    autonomy, apply, max_steps = "guarded", False, 8
+    if "--apply" in rest:
+        apply = True; rest = [a for a in rest if a != "--apply"]
+    if "--autonomy" in rest:
+        i = rest.index("--autonomy")
+        autonomy = rest[i + 1] if i + 1 < len(rest) else "guarded"
+        del rest[i:i + 2]
+    if "--max-steps" in rest:
+        i = rest.index("--max-steps")
+        max_steps = int(rest[i + 1]) if i + 1 < len(rest) else 8
+        del rest[i:i + 2]
+    if autonomy not in ("read", "guarded", "full"):
+        autonomy = "guarded"
+    goal = " ".join(rest).strip()
+    if not goal:
+        print('usage: guardd agent [--autonomy read|guarded|full] [--apply] '
+              '[--max-steps N] "<goal>"', file=sys.stderr)
+        return 2
+
+    provider = state.active_provider(config_default=_configured_adapter())
+    if provider == "mock":
+        print("agent needs a tool-capable AI plane — run: guardd use ollama|claude|openai",
+              file=sys.stderr)
+        return 2
+    cfg = state.adapter_config(provider)
+    print(f"agent: {provider}/{cfg.get('model') or '-'} · autonomy={autonomy} · "
+          f"{'APPLY' if apply else 'dry-run'}")
+    try:
+        result = agent.run(goal, provider, model=cfg.get("model"), key=cfg.get("key"),
+                           base_url=cfg.get("base_url"),
+                           host=os.environ.get("VELOGUARD_OLLAMA_HOST"),
+                           autonomy=autonomy, apply=apply, max_steps=max_steps)
+    except (RuntimeError, KeyError, ValueError) as e:
+        print(f"agent error: {e}", file=sys.stderr)
+        return 1
+    for s in result["steps"]:
+        print(f"  → {s['tool']}({s['args']}) :: {s['result'].get('status', '?')}")
+    print("\n" + (result["final"] or "(no summary)"))
+    record({"control": "agent", "goal": goal, "autonomy": autonomy,
+            "steps": len(result["steps"]), "result": "done"})
+    return 0
+
+
+# ===========================================================================
 # UPDATER — signed VeloGuard releases + kernel re-merge (agent-drivable)
 # ===========================================================================
 
@@ -493,6 +546,14 @@ def _control(argv: list[str]) -> int:
 
     if verb == "update":
         return _update(rest)
+
+    if verb == "agent":
+        return _agent(rest)
+
+    if verb == "mcp":
+        from .mcp_server import serve
+        serve()
+        return 0
 
     if verb == "providers":
         for p in state.PROVIDERS:
