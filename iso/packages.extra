@@ -41,8 +41,7 @@ ntfs-3g
 # guard runtime
 python
 
-# graphical installer (Calamares) — pulled from Chaotic-AUR at build time, since
-# it isn't in Arch's official repos (see build.sh).
-calamares
-ckbcomp
+# NOTE: Calamares (GUI installer) is staged in iso/airootfs/etc/calamares but not
+# installed yet — it isn't in Arch's repos and the Chaotic-AUR pull was flaky.
+# The live ISO uses archinstall for now; Calamares needs an AUR makepkg build.
 
