@@ -38,7 +38,7 @@ id builder &>/dev/null || useradd -m builder
 printf 'builder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/builder
 install -d -o builder /tmp/aur
 sudo -u builder bash -c '
-  cd /tmp/aur && git clone --depth1 https://aur.archlinux.org/yay.git &&
+  cd /tmp/aur && git clone --depth=1 https://aur.archlinux.org/yay.git &&
   cd yay && makepkg -s --noconfirm' || echo "  (yay build skipped)"
 LR="$PROFILE/local-repo"; mkdir -p "$LR"
 cp /tmp/aur/yay/*.pkg.tar.zst "$LR"/ 2>/dev/null || true
