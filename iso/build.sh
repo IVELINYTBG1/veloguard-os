@@ -83,6 +83,35 @@ DCONF
 dconf compile "$PROFILE/airootfs/etc/dconf/db/local" \
               "$PROFILE/airootfs/etc/dconf/db/local.d"
 
+# 7.6 graphical autologin — boot straight into GNOME as a passwordless live user.
+#     (GDM refuses root logins, and releng defaults to a console; fix both.)
+ln -sf /usr/lib/systemd/system/graphical.target \
+  "$PROFILE/airootfs/etc/systemd/system/default.target"
+# Create the live user AT BOOT so useradd gets home/perms right in the live system.
+cat > "$PROFILE/airootfs/etc/systemd/system/veloguard-live-user.service" <<'UNIT'
+[Unit]
+Description=VeloGuardOS live user setup
+Before=gdm.service display-manager.service
+ConditionPathExists=!/home/veloguard
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/bash -c 'useradd -m -G wheel -s /usr/bin/bash veloguard && passwd -d veloguard'
+[Install]
+WantedBy=multi-user.target
+UNIT
+ln -sf /etc/systemd/system/veloguard-live-user.service \
+  "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/veloguard-live-user.service"
+# Passwordless sudo for the live user.
+mkdir -p "$PROFILE/airootfs/etc/sudoers.d"
+printf '%%wheel ALL=(ALL:ALL) NOPASSWD: ALL\n' \
+  > "$PROFILE/airootfs/etc/sudoers.d/10-wheel-nopasswd"
+chmod 440 "$PROFILE/airootfs/etc/sudoers.d/10-wheel-nopasswd"
+# GDM auto-login that user → straight to the GNOME desktop + our wallpaper.
+mkdir -p "$PROFILE/airootfs/etc/gdm"
+printf '[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=veloguard\nWaylandEnable=true\n' \
+  > "$PROFILE/airootfs/etc/gdm/custom.conf"
+
 # 8. build the ISO
 mkdir -p "$WORK" "$OUT"
 mkarchiso -v -w "$WORK" -o "$OUT" "$PROFILE"
