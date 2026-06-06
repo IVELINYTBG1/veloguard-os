@@ -1,0 +1,14 @@
+# Brand /usr/lib/os-release as VeloGuardOS right after the 'filesystem' package
+# installs (it ships Arch's os-release). This bakes the identity into the image
+# so systemd's early "Welcome to VeloGuardOS!" boot line is correct — and it
+# re-applies on every future filesystem update.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = filesystem
+
+[Action]
+Description = Branding os-release as VeloGuardOS...
+When = PostTransaction
+Exec = /usr/bin/cp -f /opt/veloguard/branding/os-release /usr/lib/os-release
