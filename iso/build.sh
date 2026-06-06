@@ -13,6 +13,9 @@ PROFILE="${PROFILE:-/tmp/vgos-profile}"
 WORK="${WORK:-$REPO/work}"
 OUT="${OUT:-$REPO/out}"
 
+# dconf is needed to compile the default-wallpaper database (step 7.5)
+command -v dconf >/dev/null || pacman -S --noconfirm --needed dconf
+
 # 1. start from the official profile (correct syslinux/ + efiboot/ configs)
 rm -rf "$PROFILE"
 cp -r /usr/share/archiso/configs/releng "$PROFILE"
@@ -58,6 +61,27 @@ install -Dm644 "$REPO/veloguard/provision/veloguard-update.timer" \
   "$PROFILE/airootfs/etc/systemd/system/veloguard-update.timer"
 ln -sf /etc/systemd/system/veloguard-update.timer \
   "$PROFILE/airootfs/etc/systemd/system/timers.target.wants/veloguard-update.timer"
+
+# 7.5 default wallpaper — system-wide via a dconf database, so every user
+#     (including the live session) gets the VeloGuardOS wallpaper out of the box.
+#     The PNG is already in airootfs from the overlay (step 5):
+#       /usr/share/backgrounds/veloguard/default.png
+WP="file:///usr/share/backgrounds/veloguard/default.png"
+mkdir -p "$PROFILE/airootfs/etc/dconf/db/local.d" "$PROFILE/airootfs/etc/dconf/profile"
+printf 'user-db:user\nsystem-db:local\n' > "$PROFILE/airootfs/etc/dconf/profile/user"
+cat > "$PROFILE/airootfs/etc/dconf/db/local.d/01-veloguard-background" <<DCONF
+[org/gnome/desktop/background]
+picture-uri='$WP'
+picture-uri-dark='$WP'
+picture-options='zoom'
+primary-color='#13203a'
+
+[org/gnome/desktop/screensaver]
+picture-uri='$WP'
+picture-options='zoom'
+DCONF
+dconf compile "$PROFILE/airootfs/etc/dconf/db/local" \
+              "$PROFILE/airootfs/etc/dconf/db/local.d"
 
 # 8. build the ISO
 mkdir -p "$WORK" "$OUT"
