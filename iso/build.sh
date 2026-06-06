@@ -29,6 +29,23 @@ sed -i 's/^iso_application=.*/iso_application="VeloGuardOS Live"/' "$PROFILE/pro
 sed -i 's/Arch Linux/VeloGuardOS/g' "$PROFILE"/syslinux/*.cfg 2>/dev/null || true
 sed -i 's/Arch Linux/VeloGuardOS/g' "$PROFILE"/efiboot/loader/entries/*.conf 2>/dev/null || true
 
+# 2.5 Calamares (graphical installer) isn't in Arch's official repos — add
+#     Chaotic-AUR (prebuilt) so pacstrap can install it. Build-time only.
+#     NOTE: depends on Chaotic-AUR being reachable; the fragile part to watch.
+if ! grep -q '\[chaotic-aur\]' /etc/pacman.conf; then
+  pacman-key --init || true
+  pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com || true
+  pacman-key --lsign-key 3056513887B78AEB || true
+  pacman -U --noconfirm \
+    'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
+    'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' || true
+  printf '\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist\n' >> /etc/pacman.conf
+  pacman -Sy || true
+fi
+# Expose the repo to pacstrap (the profile pacman.conf mkarchiso uses).
+grep -q '\[chaotic-aur\]' "$PROFILE/pacman.conf" || \
+  printf '\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist\n' >> "$PROFILE/pacman.conf"
+
 # 3. extra packages (appended to releng's base list)
 cat "$REPO/iso/packages.extra" >> "$PROFILE/packages.x86_64"
 
@@ -147,6 +164,10 @@ install -d "$PROFILE/airootfs/usr/share/pixmaps"
 # GDM login-screen / About logo.
 "$IM" "$WALLSRC" -resize 480x \
   "$PROFILE/airootfs/usr/share/pixmaps/veloguardos.png" || echo "  (logo gen skipped)"
+# Calamares installer branding logo.
+install -d "$PROFILE/airootfs/etc/calamares/branding/veloguardos"
+"$IM" "$WALLSRC" -resize 320x \
+  "$PROFILE/airootfs/etc/calamares/branding/veloguardos/veloguard-logo.png" || true
 
 # 8. build the ISO
 mkdir -p "$WORK" "$OUT"

@@ -1,0 +1,34 @@
+---
+componentName: veloguardos
+
+welcomeStyleCalamares: true
+welcomeExpandingLogo: true
+windowExpanding: normal
+windowSize: 820px,560px
+windowPlacement: center
+
+strings:
+    productName:         VeloGuardOS
+    shortProductName:    VeloGuardOS
+    version:             0.1.0
+    shortVersion:        0.1.0
+    versionedName:       VeloGuardOS 0.1.0
+    shortVersionedName:  VeloGuardOS
+    bootloaderEntryName:  VeloGuardOS
+    productUrl:          https://github.com/IVELINYTBG1/veloguard-os
+    supportUrl:          https://github.com/IVELINYTBG1/veloguard-os
+    releaseNotesUrl:     https://github.com/IVELINYTBG1/veloguard-os
+
+images:
+    productLogo:         "veloguard-logo.png"
+    productIcon:         "veloguard-logo.png"
+    productWelcome:      "veloguard-logo.png"
+
+slideshow:               "show.qml"
+
+# Blue-shield theme
+style:
+    sidebarBackground:    "#13203a"
+    sidebarText:          "#e8eef7"
+    sidebarTextSelect:    "#17a2b8"
+    sidebarTextHighlight: "#1f7fbf"

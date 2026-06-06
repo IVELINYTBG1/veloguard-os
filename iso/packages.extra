@@ -37,3 +37,9 @@ ntfs-3g
 
 # guard runtime
 python
+
+# graphical installer (Calamares) — pulled from Chaotic-AUR at build time, since
+# it isn't in Arch's official repos (see build.sh).
+calamares
+ckbcomp
+
