@@ -38,7 +38,7 @@ import sys
 from pathlib import Path
 
 from . import (__version__, agent, analyst, honeypot, memory, netclass, state,
-               updater, vlayer)
+               updater, vlayer, voice)
 from .actions import Action, ActionType
 from .ai_adapter import get_adapter
 from .audit import record
@@ -51,7 +51,7 @@ CONFIG_PATH = VELOGUARD_DIR / "config.json"
 
 CONTROL_VERBS = {"setup", "use", "key", "model", "status", "models",
                  "providers", "net", "honeypot", "analyze", "run-safe",
-                 "update", "agent", "mcp", "help"}
+                 "update", "agent", "mcp", "voice", "help"}
 
 
 def _configured_adapter() -> str:
@@ -189,6 +189,12 @@ def _setup_wizard() -> int:
     active = state.active_provider(config_default=_configured_adapter())
     if active != "mock" and _ask("\nTest the connection now? [Y/n]", "Y").lower() in ("y", "yes"):
         _test_connection(active)
+
+    # Voice assistant wake word (optional; engines via provision/install-voice.sh)
+    ww = _ask("\nVoice assistant wake word (blank to skip)", "hey guard")
+    if ww:
+        memory.set_pref("wake_word", ww)
+        print(f"  wake word: '{ww}'  (install voice engines: sudo provision/install-voice.sh)")
 
     if _ask("\nInitialize the VeloGuard firewall table now? [y/N]", "N").lower() in ("y", "yes"):
         as_root = os.geteuid() == 0
@@ -554,6 +560,9 @@ def _control(argv: list[str]) -> int:
         from .mcp_server import serve
         serve()
         return 0
+
+    if verb == "voice":
+        return voice.run()
 
     if verb == "providers":
         for p in state.PROVIDERS:
