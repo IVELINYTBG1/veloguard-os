@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=Install VeloGuardOS
-Comment=Install VeloGuardOS to your drive (guided installer)
-Exec=gnome-console -- bash -c 'sudo archinstall; echo; read -p "Press Enter to close…"'
+Comment=Install VeloGuardOS to your drive
+Exec=bash -c "sudo archinstall; echo; read -p 'Press Enter to close…'"
 Icon=system-os-installer
-Terminal=false
+Terminal=true
 Categories=System;Settings;
-Keywords=install;installer;disk;calamares;
+Keywords=install;installer;disk;

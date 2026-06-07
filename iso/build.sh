@@ -148,6 +148,7 @@ picture-options='zoom'
 logo='/usr/share/pixmaps/veloguardos.png'
 
 [org/gnome/shell]
+disable-user-extensions=false
 enabled-extensions=['veloguard@veloguardos']
 DCONF
 dconf compile "$PROFILE/airootfs/etc/dconf/db/local" \
