@@ -1,0 +1,5 @@
+# Keep USB Wi-Fi adapters powered — autosuspend resets Realtek dongles and
+# makes the radio flap on/off (rfkill killswitch oscillation). Targets the
+# Realtek vendor (0bda) seen on this hardware; harmless on others.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0bda", TEST=="power/control", ATTR{power/control}="on"
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0bda", TEST=="power/autosuspend", ATTR{power/autosuspend}="-1"

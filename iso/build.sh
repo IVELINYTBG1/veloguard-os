@@ -70,9 +70,11 @@ ln -sf /usr/lib/systemd/system/gdm.service \
 mkdir -p "$PROFILE/airootfs/etc/systemd/system/network-online.target.wants" \
          "$PROFILE/airootfs/etc/systemd/system/bluetooth.target.wants"
 for svc in systemd-networkd.service systemd-networkd.socket iwd.service \
-           systemd-networkd-wait-online.service; do
+           systemd-networkd-wait-online.service ModemManager.service; do
   ln -sf /dev/null "$PROFILE/airootfs/etc/systemd/system/$svc"     # mask
 done
+# ModemManager mis-probes the Realtek USB Wi-Fi adapter and flaps its radio;
+# there's no real WWAN here, so masking it is pure win for Wi-Fi stability.
 ln -sf /usr/lib/systemd/system/NetworkManager-wait-online.service \
   "$PROFILE/airootfs/etc/systemd/system/network-online.target.wants/NetworkManager-wait-online.service"
 # Bluetooth: enable the service (and dbus-activated for GNOME's BT panel).
