@@ -29,25 +29,11 @@ sed -i 's/^iso_application=.*/iso_application="VeloGuardOS Live"/' "$PROFILE/pro
 sed -i 's/Arch Linux/VeloGuardOS/g' "$PROFILE"/syslinux/*.cfg 2>/dev/null || true
 sed -i 's/Arch Linux/VeloGuardOS/g' "$PROFILE"/efiboot/loader/entries/*.conf 2>/dev/null || true
 
-# 2.5 AUR helper: it's Arch-based, so bake in 'yay'. Build it from the AUR
-#     (makepkg as a non-root user) into a LOCAL repo that pacstrap can read.
-#     Conditional: if the build fails, the ISO still ships (git + base-devel give
-#     manual AUR), so this can't break the image.
-pacman -S --noconfirm --needed git base-devel go || true
-id builder &>/dev/null || useradd -m builder
-printf 'builder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/builder
-install -d -o builder /tmp/aur
-sudo -u builder bash -c '
-  cd /tmp/aur && git clone --depth=1 https://aur.archlinux.org/yay.git &&
-  cd yay && makepkg -s --noconfirm' || echo "  (yay build skipped)"
-LR="$PROFILE/local-repo"; mkdir -p "$LR"
-cp /tmp/aur/yay/*.pkg.tar.zst "$LR"/ 2>/dev/null || true
-if ls "$LR"/*.pkg.tar.zst >/dev/null 2>&1; then
-  repo-add "$LR/vglocal.db.tar.gz" "$LR"/*.pkg.tar.zst
-  printf '\n[vglocal]\nSigLevel = Optional TrustAll\nServer = file://%s\n' "$LR" \
-    >> "$PROFILE/pacman.conf"
-  echo yay >> "$PROFILE/packages.x86_64"
-fi
+# 2.5 AUR: git + base-devel ship in the image (packages.extra), so the user has
+#     full MANUAL AUR out of the box: git clone <aur-url> && (cd pkg && makepkg -si)
+#     The auto-built 'yay' helper kept breaking the ISO build (local-repo/pacstrap
+#     fragility), so it's deferred. Post-boot one-liner to add it:
+#       git clone https://aur.archlinux.org/yay.git && (cd yay && makepkg -si)
 
 # 3. extra packages (appended to releng's base list)
 cat "$REPO/iso/packages.extra" >> "$PROFILE/packages.x86_64"
