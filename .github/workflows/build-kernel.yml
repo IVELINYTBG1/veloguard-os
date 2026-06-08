@@ -10,7 +10,7 @@ on:
     paths:
       - 'kernel/**'
       - 'veloguard/kernel/**'
-    tags: ['kernel-v*']
+      - '.github/workflows/build-kernel.yml'
 
 permissions:
   contents: write          # attach the package to a Release
