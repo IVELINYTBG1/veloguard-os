@@ -10,4 +10,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/veloguard-update check
-# Check only. Applying is deliberate — done by the user or the update-agent.
+# Quietly pre-download + verify a new SIGNED kernel into staging. This does NOT
+# apply it — installing happens on reboot, and only if the user ticks the box on
+# the restart dialog. '-' = non-fatal when the channel is dark/offline.
+ExecStart=-/usr/local/bin/veloguard-update kernel --stage --apply

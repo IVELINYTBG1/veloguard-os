@@ -4,5 +4,11 @@
     "artifact": "https://github.com/IVELINYTBG1/veloguard-os/releases/latest/download/veloguard.tar.gz",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
-  "kernel": { "version": "7.1.0", "tag": "v7.1", "notes": "baseline" }
+  "kernel": {
+    "version": "7.0",
+    "base_tag": "v7.0",
+    "package": "linux-veloguard-7.0-1-x86_64.pkg.tar.zst",
+    "artifact": "https://github.com/IVELINYTBG1/veloguard-os/releases/latest/download/linux-veloguard-7.0-1-x86_64.pkg.tar.zst",
+    "sha256": "REPLACE_WITH_CI_KERNEL_SHA256"
+  }
 }

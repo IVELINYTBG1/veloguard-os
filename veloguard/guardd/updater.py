@@ -31,6 +31,12 @@ VERSION_FILE = VELOGUARD_DIR / "VERSION"
 PUBKEY = VELOGUARD_DIR / "keys" / "veloguard-release.pem"
 DEFAULT_MANIFEST = "https://raw.githubusercontent.com/IVELINYTBG1/veloguard-os/main/manifest.json"
 
+# Prebuilt-kernel offline updates (Fedora-style: download in the background,
+# apply on reboot). The staged package lives here; systemd enters
+# system-update.target on the next boot iff SYSTEM_UPDATE_FLAG exists.
+KERNEL_STAGE = Path("/var/lib/veloguard/staged-kernel")
+SYSTEM_UPDATE_FLAG = Path("/system-update")
+
 
 class UpdateError(Exception):
     pass
@@ -187,3 +193,63 @@ def apply_kernel(source: str | None = None, build: bool = False,
             raise UpdateError(f"kernel step failed: {' '.join(s)}\n{r.stderr[-400:]}")
         out.append(" ".join(s))
     return "kernel updated to " + tag + ":\n  " + "\n  ".join(out)
+
+
+# --- kernel: prebuilt, offline, apply-on-reboot (the shippable path) --------
+# Users don't compile. CI builds linux-veloguard once; the updater downloads the
+# SIGNED, hash-pinned package in the background and stages it. Applying happens
+# on the next reboot — and only if the user ticked the box on the restart dialog.
+
+def kernel_update_pending() -> dict | None:
+    """If a verified kernel package is staged, return {'version','package'};
+    else None. Read-only — safe for the restart UI / agent to poll."""
+    try:
+        return json.loads((KERNEL_STAGE / "pending.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def stage_kernel(source: str | None = None, dry_run: bool = True) -> str:
+    """Download + verify the prebuilt kernel named in the SIGNED manifest and
+    stage it. Does NOT arm the reboot — that's the user's opt-in at restart
+    (the checkbox → arm_reboot_update())."""
+    m = load_manifest(source)                       # verifies the signature first
+    k = m.get("kernel", {})
+    art, want, ver, pkg = (k.get("artifact"), k.get("sha256"),
+                           k.get("version"), k.get("package"))
+    if not (art and want and pkg):
+        raise UpdateError("manifest kernel block has no prebuilt artifact/sha256/"
+                          "package — the prebuilt channel isn't published yet")
+    if ver and ver == local_kernel_version():
+        return f"kernel already at {ver} — nothing to stage"
+    if dry_run:
+        return (f"[dry-run] would fetch {pkg}, verify sha256, stage to "
+                f"{KERNEL_STAGE}, mark pending v{ver}")
+    KERNEL_STAGE.mkdir(parents=True, exist_ok=True)
+    dest = KERNEL_STAGE / pkg
+    dest.write_bytes(_fetch(art))
+    got = sha256(dest)
+    if got != want:                                  # manifest signed → trust chain
+        dest.unlink(missing_ok=True)
+        raise UpdateError(f"kernel artifact sha256 mismatch (got {got[:12]}…) — refused")
+    (KERNEL_STAGE / "pending.json").write_text(
+        json.dumps({"version": ver, "package": pkg}))
+    return f"staged kernel v{ver} ({pkg}) — confirm at restart to install"
+
+
+def arm_reboot_update() -> str:
+    """Opt-in confirmed: flip systemd into offline-update mode for the next boot
+    (it installs the staged package, then reboots normally)."""
+    if kernel_update_pending() is None:
+        raise UpdateError("nothing staged to apply")
+    if SYSTEM_UPDATE_FLAG.is_symlink() or SYSTEM_UPDATE_FLAG.exists():
+        SYSTEM_UPDATE_FLAG.unlink()
+    SYSTEM_UPDATE_FLAG.symlink_to(KERNEL_STAGE)      # systemd.offline-updates(7)
+    return "armed — VeloGuardOS will install the kernel on the next reboot"
+
+
+def disarm_reboot_update() -> str:
+    """Opt-out: keep the package staged but don't apply it on reboot."""
+    if SYSTEM_UPDATE_FLAG.is_symlink() or SYSTEM_UPDATE_FLAG.exists():
+        SYSTEM_UPDATE_FLAG.unlink()
+    return "disarmed — staged kernel will not be applied on reboot"

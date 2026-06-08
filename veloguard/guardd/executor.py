@@ -17,6 +17,7 @@ import subprocess
 TABLE = "inet veloguard"
 SET = "blocklist"
 QUARANTINE_DIR = "/run/veloguard/quarantine"  # /run is tmpfs == RAM
+WG_DIR = "/etc/wireguard"                      # where wg-quick reads <profile>.conf
 
 
 class NftExecutor:
@@ -76,13 +77,66 @@ class NftExecutor:
         target = target or "veloguard"
         if target == "tor":
             return self._sh(["systemctl", "start", "tor"])
-        return self._sh(["wg-quick", "up", target])
+        # A WireGuard profile with AllowedIPs=0.0.0.0/0 *replaces the default
+        # route*. If the profile is missing or its endpoint is dead, every
+        # interface (Wi-Fi AND wired) silently black-holes — the connection
+        # looks up but no traffic flows. So never raise a tunnel we can't
+        # verify, and roll back one that comes up with no connectivity: better
+        # no VPN than no network. (Real-run only; dry-run just previews.)
+        cfg = f"{WG_DIR}/{target}.conf"
+        if self.apply and not self._config_has_endpoint(cfg):
+            raise RuntimeError(
+                f"{cfg} is missing or has no Endpoint — bringing this tunnel up "
+                f"would black-hole all routing. Import one first: "
+                f"veloguard-vpn import <wg.conf>")
+        out = self._sh(["wg-quick", "up", target])
+        if self.apply and not self._tunnel_has_connectivity():
+            # Internal rollback of our own failed action — not a user-initiated
+            # vpn_down, so it needs no consent (leaving the black hole would).
+            self._sh(["wg-quick", "down", target])
+            raise RuntimeError(
+                f"tunnel '{target}' came up but has no connectivity "
+                f"(dead/unreachable endpoint) — rolled back to direct routing")
+        return out
 
     def vpn_down(self, target: str | None) -> str:
         target = target or "veloguard"
         if target == "tor":
             return self._sh(["systemctl", "stop", "tor"])
         return self._sh(["wg-quick", "down", target])
+
+    # --- VPN safety: a tunnel that can't carry traffic is worse than none ----
+    def _config_has_endpoint(self, path: str) -> bool:
+        """A usable WireGuard profile must exist and name a non-empty Endpoint."""
+        try:
+            with open(path) as fh:
+                for line in fh:
+                    s = line.strip()
+                    if (s.lower().startswith("endpoint") and "=" in s
+                            and s.split("=", 1)[1].strip()):
+                        return True
+        except OSError:
+            return False
+        return False
+
+    def _tunnel_has_connectivity(self, settle: float = 1.5,
+                                 timeout: float = 2.0, rounds: int = 2) -> bool:
+        """Can we actually reach the internet through the freshly-raised tunnel?
+        Raw TCP to anycast resolvers on :443 — deliberately NO DNS, because a
+        dead tunnel usually breaks resolution too and we'd just hang on it."""
+        import socket
+        import time
+        time.sleep(settle)  # WireGuard's first handshake is async — let it settle.
+        for attempt in range(rounds):
+            for host in ("1.1.1.1", "9.9.9.9"):
+                try:
+                    socket.create_connection((host, 443), timeout=timeout).close()
+                    return True
+                except OSError:
+                    continue
+            if attempt + 1 < rounds:
+                time.sleep(1.0)
+        return False
 
     # --- Quarantine: freeze an unknown process, stash its exe in RAM (tmpfs) -
     def quarantine(self, target: str) -> str:
