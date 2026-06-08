@@ -7,7 +7,7 @@
 # __PKGVER__ token). The config fragments and any patches/*.patch are staged
 # next to this PKGBUILD by build-recipe.sh before makepkg runs.
 
-pkgbase=linux-veloguard
+pkgname=linux-veloguard
 pkgver=__PKGVER__
 pkgrel=1
 _srcname="linux-${pkgver}"
