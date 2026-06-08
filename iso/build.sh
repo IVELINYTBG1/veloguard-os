@@ -57,6 +57,20 @@ done
 install -Dm644 "$REPO/veloguard/ui/bulgarian-mode.desktop" \
   "$PROFILE/airootfs/usr/share/applications/bulgarian-mode.desktop"
 
+# 6b. offline kernel updater (Fedora-style apply-on-reboot): the apply script
+# runs during system-update.target; the restart prompt offers the opt-in.
+ln -sf "/opt/veloguard/provision/veloguard-apply-staged-kernel" \
+  "$PROFILE/airootfs/usr/local/bin/veloguard-apply-staged-kernel"
+ln -sf "/opt/veloguard/provision/veloguard-restart-check" \
+  "$PROFILE/airootfs/usr/local/bin/veloguard-restart-check"
+ln -sf "/opt/veloguard/provision/veloguard-arm-offline-update" \
+  "$PROFILE/airootfs/usr/local/bin/veloguard-arm-offline-update"
+install -Dm644 "$REPO/veloguard/provision/veloguard-offline-update.service" \
+  "$PROFILE/airootfs/etc/systemd/system/veloguard-offline-update.service"
+mkdir -p "$PROFILE/airootfs/etc/systemd/system/system-update.target.wants"
+ln -sf /etc/systemd/system/veloguard-offline-update.service \
+  "$PROFILE/airootfs/etc/systemd/system/system-update.target.wants/veloguard-offline-update.service"
+
 # 7. enable services: NetworkManager + GDM, and BAKE IN the updater timer
 mkdir -p "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants" \
          "$PROFILE/airootfs/etc/systemd/system/timers.target.wants"

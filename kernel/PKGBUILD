@@ -1,0 +1,84 @@
+# Maintainer: VeloGuardOS <https://github.com/IVELINYTBG1/veloguard-os>
+#
+# VeloGuardOS kernel = upstream Linux (pinned by ../BASE) + our config fragments
+# + our patches. Built once in CI, shipped to users as a prebuilt offline update.
+#
+# pkgver is injected from kernel/BASE by build-recipe.sh (which replaces the
+# __PKGVER__ token). The config fragments and any patches/*.patch are staged
+# next to this PKGBUILD by build-recipe.sh before makepkg runs.
+
+pkgname=linux-veloguard
+pkgver=__PKGVER__
+pkgrel=1
+_srcname="linux-${pkgver}"
+pkgdesc='The VeloGuardOS Linux kernel and modules'
+url='https://github.com/IVELINYTBG1/veloguard-os'
+arch=(x86_64)
+license=(GPL-2.0-only)
+makedepends=(bc cpio gettext libelf pahole perl python tar xz zstd kmod git)
+options=('!debug' '!strip')
+# The upstream source tarball is produced by build-recipe.sh via a shallow
+# `git archive` of the BASE tag from torvalds/linux (the same tree the agent
+# compares against) — so we never depend on kernel.org tarball hosting.
+source=(
+  "${_srcname}.tar"
+  veloguardos-base.config
+  veloguardos-desktop.config
+  veloguardos-hardware.config
+)
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
+
+export KBUILD_BUILD_HOST=veloguardos
+export KBUILD_BUILD_USER=$pkgbase
+export KBUILD_BUILD_TIMESTAMP="$(date -Ru${SOURCE_DATE_EPOCH:+d @$SOURCE_DATE_EPOCH})"
+
+prepare() {
+  cd "$_srcname"
+
+  echo "Applying VeloGuard patch series…"
+  local p
+  for p in "$srcdir"/*.patch; do
+    [ -e "$p" ] || continue
+    echo "  -> ${p##*/}"
+    patch -Np1 < "$p"
+  done
+
+  echo "Building base config (x86_64_defconfig) + VeloGuard fragments…"
+  make x86_64_defconfig
+  scripts/kconfig/merge_config.sh -m .config \
+    "$srcdir/veloguardos-base.config" \
+    "$srcdir/veloguardos-desktop.config" \
+    "$srcdir/veloguardos-hardware.config"
+  make olddefconfig
+
+  make -s kernelrelease > version
+  echo "Prepared $(cat version)"
+}
+
+build() {
+  cd "$_srcname"
+  make all
+}
+
+package() {
+  depends=(coreutils kmod initramfs)
+  optdepends=('wireless-regdb: to set the correct wireless channels'
+              'linux-firmware: firmware images for most hardware')
+  provides=(WIREGUARD-MODULE KSMBD-MODULE)
+
+  cd "$_srcname"
+  local kernver; kernver="$(<version)"
+  local modulesdir="$pkgdir/usr/lib/modules/$kernver"
+
+  echo "Installing boot image…"
+  # systemd expects the image at the modules dir; mkinitcpio + bootloader pick it up.
+  install -Dm644 "$(make -s image_name)" "$modulesdir/vmlinuz"
+  echo "$pkgbase" | install -Dm644 /dev/stdin "$modulesdir/pkgbase"
+
+  echo "Installing modules…"
+  ZSTD_CLEVEL=19 make INSTALL_MOD_PATH="$pkgdir/usr" INSTALL_MOD_STRIP=1 \
+    DEPMOD=/doesnt/exist modules_install
+
+  # Remove the build/source symlinks (no -headers subpackage shipped yet).
+  rm -f "$modulesdir"/{source,build}
+}

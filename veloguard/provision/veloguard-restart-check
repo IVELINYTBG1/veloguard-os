@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#
+# veloguard-restart-check — the Fedora-style "install update on restart?" prompt.
+# If a verified kernel update is staged, ask the user (checkbox = yes); on yes,
+# arm the offline update so it installs on the next boot. Either way, restart.
+#
+# Wire this as the desktop's Restart action, e.g. replace the GNOME end-session
+# "Restart" with this, or call it instead of `systemctl reboot`. The polished
+# version is a checkbox inside GNOME's end-session dialog (see provision/README).
+set -uo pipefail
+
+pending="$(veloguard-update kernel --pending 2>/dev/null || echo none)"
+if [ -z "$pending" ] || [ "$pending" = "none" ]; then
+  exec systemctl reboot                    # nothing staged → just restart
+fi
+
+# A staged update exists — offer it (default-yes, like Fedora/GNOME).
+if command -v zenity >/dev/null 2>&1; then
+  if zenity --question --title="VeloGuardOS update" \
+       --ok-label="Update & Restart" --cancel-label="Restart without updating" \
+       --text="A system update (kernel $pending) is ready.\n\nInstall it now? Your PC will update, then restart."; then
+    pkexec /usr/local/bin/veloguard-arm-offline-update || true
+  fi
+elif command -v notify-send >/dev/null 2>&1; then
+  notify-send "VeloGuardOS" "Update kernel $pending pending — run: veloguard-update kernel --arm"
+fi
+
+exec systemctl reboot

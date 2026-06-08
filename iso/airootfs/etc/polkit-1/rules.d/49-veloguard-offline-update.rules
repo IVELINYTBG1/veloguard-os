@@ -1,0 +1,10 @@
+// Let the active local user arm a VeloGuardOS offline kernel update without a
+// password — the same trust model Fedora/PackageKit uses for offline updates.
+// Only pkexec of our one fixed wrapper is granted; nothing else.
+polkit.addRule(function (action, subject) {
+    if (action.id === "org.freedesktop.policykit.exec" &&
+        action.lookup("program") === "/usr/local/bin/veloguard-arm-offline-update" &&
+        subject.active && subject.local) {
+        return polkit.Result.YES;
+    }
+});

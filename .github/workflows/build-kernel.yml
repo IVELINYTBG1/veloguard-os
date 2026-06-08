@@ -1,0 +1,60 @@
+name: Build VeloGuardOS kernel
+
+# Builds the prebuilt linux-veloguard package (upstream BASE tag + our config +
+# our patches) so the OS updater can ship it as an offline, apply-on-reboot
+# update. Fires when the kernel delta changes (the agent bumping kernel/BASE or
+# the config fragments), or by hand / on a release tag.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'kernel/**'
+      - 'veloguard/kernel/**'
+      - '.github/workflows/build-kernel.yml'
+
+permissions:
+  contents: write          # attach the package to a Release
+
+jobs:
+  kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180     # a full kernel compile is long
+    container:
+      image: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain (kernel makedepends + makepkg)
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git bc cpio gettext libelf pahole perl python tar xz zstd kmod
+
+      - name: Create build user (makepkg refuses to run as root)
+        run: |
+          useradd -m builder
+          printf 'builder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Build the kernel package
+        run: sudo -u builder env OUT="$GITHUB_WORKSPACE/out" bash kernel/build-recipe.sh
+
+      - name: Show what we built
+        run: |
+          ls -lh "$GITHUB_WORKSPACE/out"
+          echo '--- kernel-manifest.json ---'
+          cat "$GITHUB_WORKSPACE/out/kernel-manifest.json"
+
+      - name: Upload package + manifest block as build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-veloguard
+          path: |
+            out/*.pkg.tar.zst
+            out/kernel-manifest.json
+          if-no-files-found: error
+
+      - name: Attach package to the Release (on kernel-v* tags)
+        if: startsWith(github.ref, 'refs/tags/kernel-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.pkg.tar.zst

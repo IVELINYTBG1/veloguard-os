@@ -102,7 +102,14 @@ def execute_tool(name: str, args: dict, *, apply: bool = False,
             return {"ok": False, "status": "needs_approval",
                     "reason": "destructive — needs autonomy=full or an interactive yes"}
 
-    out = _run_on_executor(action, NftExecutor(apply=apply))
+    try:
+        out = _run_on_executor(action, NftExecutor(apply=apply))
+    except RuntimeError as e:
+        # Executor failed or self-protected (e.g. vpn_up refused/rolled back a
+        # black-holing tunnel). Audit the failure too — the guard logs every
+        # decision — and hand callers (MCP/agent/CLI) a clean error, not a crash.
+        record({**base, "result": "failed", "error": str(e)})
+        return {"ok": False, "status": "failed", "error": str(e)}
     engine.record(action)
     record({**base, "result": "executed", "output": out})
     return {"ok": True, "status": "executed", "output": out}

@@ -213,14 +213,22 @@ def _setup_wizard() -> int:
 # ===========================================================================
 
 def _vpn_up_through_guard(ex: NftExecutor, profile: str, note: str) -> str:
-    """Run VPN_UP through the policy engine (auto-allowed) + audit it."""
+    """Run VPN_UP through the policy engine (auto-allowed) + audit it.
+
+    The executor self-protects: it refuses to raise a tunnel with no real
+    endpoint and rolls back one that comes up dead. Surface that as a clean,
+    audited message instead of a traceback — this path runs unattended from the
+    NetworkManager dispatcher, where failing safe must not mean killing the net."""
     action = Action(ActionType.VPN_UP, {"target": profile} if profile else {})
     decision = PolicyEngine.load(DEFAULT_POLICY_PATH).evaluate(action)
     if decision.verdict == Verdict.DENY:
         return f"VPN blocked by policy: {decision.reason}"
-    out = ex.vpn_up(profile)
+    try:
+        out, result = ex.vpn_up(profile), "executed"
+    except RuntimeError as exc:
+        out, result = f"VPN not applied — {exc}", "failed"
     record({"control": "net", "action": "vpn_up", "target": profile,
-            "result": "executed", "output": out, "note": note})
+            "result": result, "output": out, "note": note})
     return out
 
 
@@ -468,7 +476,33 @@ def _update(rest: list[str]) -> int:
                     "build": build, "result": "executed"})
             return 0
 
-        print(f"unknown update subcommand {sub!r} (check | apply | rollback)",
+        if sub == "kernel":
+            # Offline, prebuilt kernel path (Fedora-style apply-on-reboot).
+            if "--pending" in flags:                       # read-only, no key needed
+                p = updater.kernel_update_pending()
+                print(p["version"] if p else "none")
+                return 0
+            if "--arm" in flags:                           # opt-in confirmed (root)
+                print(updater.arm_reboot_update())
+                record({"control": "update", "sub": "kernel-arm", "result": "ok"})
+                return 0
+            if "--disarm" in flags:
+                print(updater.disarm_reboot_update())
+                record({"control": "update", "sub": "kernel-disarm", "result": "ok"})
+                return 0
+            # default: stage — download + verify the SIGNED prebuilt package
+            if not updater.PUBKEY.exists():
+                print("updater: not configured (no release key) — see keys/SIGNING.md")
+                record({"control": "update", "sub": "kernel-stage", "result": "not_configured"})
+                return 0
+            print(updater.stage_kernel(dry_run=not do_apply))
+            if not do_apply:
+                print("\n(preview only — add --apply to download + stage for reboot)")
+            record({"control": "update", "sub": "kernel-stage",
+                    "apply": do_apply, "result": "executed" if do_apply else "preview"})
+            return 0
+
+        print(f"unknown update subcommand {sub!r} (check | apply | kernel | rollback)",
               file=sys.stderr)
         return 2
     except updater.UpdateError as e:

@@ -10,3 +10,4 @@ veloguard/.venv/
 out/
 work/
 vgos-cache/
+build.log

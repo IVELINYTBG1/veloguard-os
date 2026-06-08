@@ -1,0 +1,25 @@
+# Applies a staged VeloGuardOS kernel during the special offline-update boot,
+# then reboots. systemd enters system-update.target (instead of the normal
+# target) when /system-update exists — which the restart-dialog opt-in arms.
+# See systemd.offline-updates(7).
+#
+# Install:
+#   install -m644 veloguard-offline-update.service /etc/systemd/system/
+#   systemctl enable veloguard-offline-update.service   # WantedBy system-update.target
+[Unit]
+Description=VeloGuardOS offline kernel update (apply on reboot)
+ConditionPathExists=/system-update
+DefaultDependencies=no
+Requires=sysinit.target
+After=sysinit.target
+Before=shutdown.target
+# Never loop into update mode: on failure just reboot (the script also clears
+# the trigger first thing).
+FailureAction=reboot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/veloguard-apply-staged-kernel
+
+[Install]
+WantedBy=system-update.target

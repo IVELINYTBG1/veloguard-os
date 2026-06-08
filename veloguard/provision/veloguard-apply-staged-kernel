@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# veloguard-apply-staged-kernel — runs ONLY during the offline-update boot
+# (system-update.target), installs the staged VeloGuardOS kernel package,
+# regenerates the initramfs, then reboots.
+#
+# Per systemd.offline-updates(7), the very FIRST thing we do is remove the
+# /system-update trigger, so a failed apply can never loop us back into update
+# mode. Started by veloguard-offline-update.service.
+set -uo pipefail
+STAGE=/var/lib/veloguard/staged-kernel
+exec > >(tee -a /var/log/veloguard-offline-update.log) 2>&1
+echo "=== VeloGuardOS offline kernel update — $(date -u) ==="
+
+rm -f /system-update                       # disarm FIRST (loop safety)
+
+PKG="$(ls -1 "$STAGE"/*.pkg.tar.zst 2>/dev/null | head -1)"
+if [ -n "${PKG:-}" ] && [ -f "$PKG" ]; then
+  echo "installing $PKG …"
+  if pacman -U --noconfirm "$PKG"; then
+    echo "installed — regenerating initramfs…"
+    mkinitcpio -P || true
+    rm -f "$STAGE"/*.pkg.tar.zst "$STAGE/pending.json"
+    echo "OK — kernel updated"
+  else
+    echo "pacman -U FAILED — keeping the current kernel"
+  fi
+else
+  echo "no staged package found in $STAGE — nothing to do"
+fi
+
+echo "rebooting…"
+systemctl reboot
