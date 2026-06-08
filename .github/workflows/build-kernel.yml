@@ -7,10 +7,10 @@ name: Build VeloGuardOS kernel
 on:
   workflow_dispatch:
   push:
-    paths:
-      - 'kernel/**'
-      - 'veloguard/kernel/**'
-      - '.github/workflows/build-kernel.yml'
+    branches: ['**']          # branches only — a release tag must NOT trigger a
+    paths:                    # rebuild (kernel builds aren't byte-reproducible;
+      - 'kernel/**'           # a re-attach would clobber the released asset with
+      - 'veloguard/kernel/**' # a different binary than the manifest pins)
 
 permissions:
   contents: write          # attach the package to a Release
@@ -52,9 +52,7 @@ jobs:
             out/*.pkg.tar.zst
             out/kernel-manifest.json
           if-no-files-found: error
-
-      - name: Attach package to the Release (on kernel-v* tags)
-        if: startsWith(github.ref, 'refs/tags/kernel-v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: out/*.pkg.tar.zst
+      # NOTE: releasing is deliberate, not automatic — a human/agent uploads the
+      # exact verified artifact to a Release and pins its sha256 in the signed
+      # manifest. Auto-attaching a rebuild here would drift the asset off the
+      # manifest hash (kernel builds aren't reproducible).
