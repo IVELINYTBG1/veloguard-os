@@ -48,6 +48,23 @@ find "$PROFILE/airootfs/opt/veloguard" -name __pycache__ -type d -exec rm -rf {}
 # 5. our static overlay (desktop launchers, etc.)
 [ -d "$REPO/iso/airootfs" ] && cp -r "$REPO/iso/airootfs/." "$PROFILE/airootfs/"
 
+# 4b/5b. KEEP SCRIPTS EXECUTABLE: mkarchiso copies airootfs with
+# --no-preserve=mode and restores ONLY the paths listed in profiledef.sh's
+# file_permissions — anything else lands 0644. Without these entries every
+# /opt/veloguard script (the veloguard CLI, veloguard-vpn, the netwatch
+# dispatcher hook…) ships non-executable and silently no-ops on the live ISO.
+{
+  printf 'file_permissions+=(\n'
+  for p in "$PROFILE/airootfs/opt/veloguard/bin/"* \
+           "$PROFILE/airootfs/opt/veloguard/provision/"* \
+           "$PROFILE/airootfs/opt/veloguard/"*.sh; do
+    [ -f "$p" ] || continue
+    case "$p" in *.service|*.timer|*.md) continue ;; esac
+    printf '  ["%s"]="0:0:755"\n' "${p#"$PROFILE/airootfs"}"
+  done
+  printf ')\n'
+} >> "$PROFILE/profiledef.sh"
+
 # 6. guard tools on PATH (the launcher cd's into /opt/veloguard)
 mkdir -p "$PROFILE/airootfs/usr/local/bin"
 for b in veloguard veloguard-install veloguard-vpn veloguard-vpn-ui \
