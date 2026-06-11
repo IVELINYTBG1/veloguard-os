@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+#
+# veloguard-wifi-doctor — one-shot Wi-Fi diagnosis (+ optional safe fixes).
+#
+#   veloguard-wifi-doctor              # read-only: collect evidence + diagnose
+#   sudo veloguard-wifi-doctor --fix   # also apply the standard remediations
+#
+# Always writes the full evidence to /tmp/veloguard-wifi-report.txt — attach
+# that file when asking for help. Checks are generic; the hints are tuned to
+# the hardware we ship on (Realtek rtw88).
+set -uo pipefail
+FIX=0; [ "${1:-}" = "--fix" ] && FIX=1
+R=/tmp/veloguard-wifi-report.txt
+: > "$R" 2>/dev/null || R=/dev/null
+log() { printf '%s\n' "$*" | tee -a "$R"; }
+sec() { printf '\n===== %s =====\n' "$*" | tee -a "$R"; }
+ISSUES=()
+
+sec "VeloGuardOS build"
+if [ -f /etc/veloguard-build ]; then
+    tee -a "$R" < /etc/veloguard-build
+else
+    log "(no build stamp — this image predates 2026-06-11; older ISOs have KNOWN"
+    log " Wi-Fi bugs (no wpa_supplicant backend, radio flapping). Reflash the newest.)"
+fi
+
+sec "rfkill"
+rfkill list 2>&1 | tee -a "$R"
+rfkill list 2>/dev/null | grep -q 'Soft blocked: yes' \
+    && ISSUES+=("a radio is soft-blocked")
+rfkill list 2>/dev/null | grep -q 'Hard blocked: yes' \
+    && ISSUES+=("a radio is HARD-blocked — flip the laptop's airplane-mode key (Fn+radio)")
+
+sec "NetworkManager state"
+nmcli general status 2>&1 | tee -a "$R"
+nmcli device 2>&1 | tee -a "$R"
+
+sec "wifi interfaces + drivers"
+found=0
+for n in /sys/class/net/*; do
+    [ -e "$n/phy80211" ] || [ -d "$n/wireless" ] || continue
+    found=1
+    drv=$(basename "$(readlink -f "$n/device/driver" 2>/dev/null)" 2>/dev/null || true)
+    log "  $(basename "$n")  driver=${drv:-?}"
+done
+if [ "$found" = 0 ]; then
+    log "  NO wifi interface exists"
+    ISSUES+=("no wlan device at all — the driver/firmware didn't bind (see the dmesg section of the report)")
+fi
+
+sec "USB Realtek power (autosuspend must be 'on' = never suspend)"
+for d in /sys/bus/usb/devices/*; do
+    [ -f "$d/idVendor" ] || continue
+    [ "$(cat "$d/idVendor" 2>/dev/null)" = "0bda" ] || continue
+    log "  0bda:$(cat "$d/idProduct" 2>/dev/null)  power/control=$(cat "$d/power/control" 2>/dev/null)"
+done
+
+sec "services that fight NetworkManager (should be masked/inactive)"
+for s in ModemManager iwd systemd-networkd; do
+    ena="$(systemctl is-enabled "$s" 2>/dev/null | head -n1)"
+    act="$(systemctl is-active "$s" 2>/dev/null | head -n1)"
+    log "  $s: ${ena:-absent} / ${act:-inactive}"
+    [ "$act" = active ] \
+        && ISSUES+=("$s is running — it fights NetworkManager over the radio (sudo systemctl mask --now $s)")
+done
+
+sec "NetworkManager Wi-Fi backend"
+if ! grep -rh 'wifi.backend' /etc/NetworkManager/conf.d/ 2>/dev/null | tee -a "$R" | grep -q backend; then
+    ISSUES+=("no wifi.backend pinned — without wpa_supplicant every network shows as 'open' and auth silently fails")
+fi
+
+sec "routing sanity (VPN black-hole check)"
+ip route show default 2>&1 | tee -a "$R"
+wgif=$(ip -br link show type wireguard 2>/dev/null | awk '{print $1}' | sed 's/@.*//' | head -1)
+[ -n "$wgif" ] && log "  active WireGuard tunnel: $wgif"
+if ! timeout 3 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' 2>/dev/null; then
+    log "  no internet reachability right now"
+    [ -n "$wgif" ] && ISSUES+=("no connectivity WHILE a WireGuard tunnel is up — black-holed (sudo wg-quick down $wgif)")
+fi
+
+sec "kernel messages (wifi)"
+if [ "$(id -u)" = 0 ]; then
+    dmesg 2>/dev/null | grep -iE 'rtw|firmware|cfg80211|wlan|deauth' | tail -40 | tee -a "$R"
+else
+    log "  (run with sudo to capture dmesg — driver + firmware errors live there)"
+fi
+journalctl -u NetworkManager -b --no-pager 2>/dev/null | tail -30 >> "$R" || true
+log "  (last 30 NetworkManager journal lines saved to the report)"
+
+if [ "$FIX" = 1 ]; then
+    sec "FIX MODE"
+    if [ "$(id -u)" != 0 ]; then log "  --fix needs root: sudo veloguard-wifi-doctor --fix"; exit 1; fi
+    rfkill unblock all 2>/dev/null && log "  rfkill unblock all ✓"
+    for d in /sys/bus/usb/devices/*; do
+        [ -f "$d/idVendor" ] && [ "$(cat "$d/idVendor" 2>/dev/null)" = "0bda" ] \
+            && echo on > "$d/power/control" 2>/dev/null
+    done
+    log "  USB Realtek autosuspend disabled ✓"
+    for i in $(wg show interfaces 2>/dev/null); do
+        wg-quick down "$i" >/dev/null 2>&1 && log "  stale tunnel $i torn down ✓"
+    done
+    systemctl restart NetworkManager && log "  NetworkManager restarted ✓"
+    sleep 4; nmcli device wifi rescan 2>/dev/null; sleep 3
+    sec "networks visible after fix"
+    nmcli device wifi list 2>/dev/null | head -8 | tee -a "$R"
+fi
+
+sec "DIAGNOSIS"
+if [ ${#ISSUES[@]} -eq 0 ]; then
+    log "  no structural problem found. To connect:"
+    log "    nmcli device wifi rescan && nmcli device wifi list"
+    log "    nmcli device wifi connect \"<SSID>\" --ask"
+else
+    for i in "${ISSUES[@]}"; do log "  ✗ $i"; done
+    [ "$FIX" = 0 ] && log "  → run: sudo veloguard-wifi-doctor --fix"
+fi
+log ""
+log "full report: $R  — attach this file when asking for help"

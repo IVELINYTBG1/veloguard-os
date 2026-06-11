@@ -44,6 +44,9 @@ python
 # Wi-Fi backend (the real fix: NM needs wpa_supplicant or all nets show "open")
 wpa_supplicant
 
+# GUI dialogs: the restart-update prompt + the VPN "Import config…" flow
+zenity
+
 # every distro should have git; base-devel + git = AUR works manually, and
 # build.sh also bakes in the 'yay' AUR helper from a local repo.
 git

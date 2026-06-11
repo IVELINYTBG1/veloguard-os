@@ -1,0 +1,14 @@
+// Let active local admin (wheel) users drive the VeloGuard VPN helper without
+// a password — the same trust model as the offline-update rule: one fixed
+// program. Matched by BOTH its PATH symlink and its real /opt path, because
+// pkexec canonicalizes the program path before polkit sees it.
+polkit.addRule(function (action, subject) {
+    if (action.id === "org.freedesktop.policykit.exec") {
+        var p = action.lookup("program");
+        if ((p === "/usr/local/bin/veloguard-vpn" ||
+             p === "/opt/veloguard/bin/veloguard-vpn") &&
+            subject.active && subject.local && subject.isInGroup("wheel")) {
+            return polkit.Result.YES;
+        }
+    }
+});

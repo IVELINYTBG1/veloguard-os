@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+#
+# veloguard-vpn-ui — desktop flow for "VPN ▸ Import config…": pick a WireGuard
+# .conf with a file dialog, name it after its provider, import (privileged via
+# pkexec + the veloguard polkit rule), and connect. Used by the GNOME
+# quick-settings VPN menu; also works from a terminal.
+set -uo pipefail
+VPN=/usr/local/bin/veloguard-vpn
+[ -x "$VPN" ] || VPN="$(dirname "$0")/veloguard-vpn"
+note() { notify-send "VeloGuard VPN" "$1" 2>/dev/null || echo "[veloguard-vpn-ui] $1"; }
+
+command -v zenity >/dev/null 2>&1 || {
+  note "zenity is missing — import from a terminal instead: veloguard-vpn import <file> <name>"
+  exit 1
+}
+
+f="$(zenity --file-selection --title='Pick a WireGuard config (.conf)' \
+            --file-filter='WireGuard config | *.conf' 2>/dev/null)" || exit 0
+p="$(zenity --list --radiolist --title='VeloGuard VPN' \
+            --text='Which provider is this config from?' \
+            --column='' --column='provider' \
+            TRUE proton FALSE mullvad FALSE surfshark FALSE other 2>/dev/null)" || exit 0
+if [ "$p" = "other" ]; then
+  p="$(zenity --entry --title='VeloGuard VPN' --text='Profile name:' \
+              --entry-text='veloguard' 2>/dev/null)" || exit 0
+  p="${p:-veloguard}"
+fi
+
+pkexec "$VPN" import "$f" "$p" || { note "import failed — is the file a WireGuard .conf?"; exit 1; }
+if pkexec "$VPN" connect "$p"; then
+  note "VPN connected via $p — it's now the default for auto-protect too"
+else
+  note "imported '$p' but connecting failed — check it: veloguard-vpn status"
+fi

@@ -50,7 +50,8 @@ find "$PROFILE/airootfs/opt/veloguard" -name __pycache__ -type d -exec rm -rf {}
 
 # 6. guard tools on PATH (the launcher cd's into /opt/veloguard)
 mkdir -p "$PROFILE/airootfs/usr/local/bin"
-for b in veloguard veloguard-install veloguard-vpn veloguard-update \
+for b in veloguard veloguard-install veloguard-vpn veloguard-vpn-ui \
+         veloguard-wifi-doctor veloguard-update \
          veloguard-netwatch veloguard-bulgarian-mode veloguard-mcp; do
   ln -sf "/opt/veloguard/bin/$b" "$PROFILE/airootfs/usr/local/bin/$b"
 done
@@ -201,6 +202,11 @@ install -d "$PROFILE/airootfs/usr/share/pixmaps"
 install -d "$PROFILE/airootfs/etc/calamares/branding/veloguardos"
 "$IM" "$WALLSRC" -resize 320x \
   "$PROFILE/airootfs/etc/calamares/branding/veloguardos/veloguard-logo.png" || true
+
+# build stamp — lets veloguard-wifi-doctor (and humans) tell stale ISOs apart
+{ date -u +'%Y-%m-%dT%H:%MZ'
+  git -C "$REPO" rev-parse --short HEAD 2>/dev/null || true
+} > "$PROFILE/airootfs/etc/veloguard-build"
 
 # 8. build the ISO
 mkdir -p "$WORK" "$OUT"
