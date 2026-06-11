@@ -1,11 +1,15 @@
 // VeloGuard GNOME integration:
-//   - VPN + Bulgarian Mode quick toggles (Quick Settings)
+//   - VPN quick toggle wired to real providers (Proton/Mullvad/Surfshark) via
+//     the veloguard-vpn helper: connect-or-get-a-config, zenity import flow,
+//     Tor fallback, and live state sync from the actual WireGuard interfaces.
+//   - Bulgarian Mode quick toggle.
 //   - a Fedora-style "Update VeloGuardOS on restart" checkbox injected into the
 //     end-session (restart/shutdown) dialog when a kernel update is staged.
 // Every action runs through bash (so PATH resolves) and fires a notification,
 // so a press always gives visible feedback even if the underlying op no-ops.
 import GObject from 'gi://GObject';
 import GLib from 'gi://GLib';
+import Gio from 'gi://Gio';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {QuickToggle, QuickMenuToggle, SystemIndicator}
     from 'resource:///org/gnome/shell/ui/quickSettings.js';
@@ -16,14 +20,26 @@ const PENDING = '/var/lib/veloguard/staged-kernel/pending.json';
 // Arming writes /system-update (root); a polkit rule lets the active local user
 // run this fixed wrapper without a password (see 49-veloguard-offline-update.rules).
 const ARM = ['pkexec', '/usr/local/bin/veloguard-arm-offline-update'];
+// VPN helper (polkit rule 49-veloguard-vpn.rules makes pkexec of it silent for
+// wheel users). Exit codes: 2 = no config for that provider yet.
+const VPN = '/usr/local/bin/veloguard-vpn';
+const VPN_UI = '/usr/local/bin/veloguard-vpn-ui';
+const PROVIDERS = [
+    ['Proton VPN', 'proton'],
+    ['Mullvad', 'mullvad'],
+    ['Surfshark', 'surfshark'],
+];
 
-function run(cmd, note) {
-    const full = `${cmd}; notify-send "VeloGuard" ${GLib.shell_quote(note)}`;
+function sh(cmd) {
     try {
-        GLib.spawn_command_line_async(`/bin/bash -lc ${GLib.shell_quote(full)}`);
+        GLib.spawn_command_line_async(`/bin/bash -lc ${GLib.shell_quote(cmd)}`);
     } catch (e) {
         logError(e, 'veloguard');
     }
+}
+
+function run(cmd, note) {
+    sh(`${cmd}; notify-send "VeloGuard" ${GLib.shell_quote(note)}`);
 }
 
 const BgToggle = GObject.registerClass(
@@ -42,20 +58,70 @@ class VpnToggle extends QuickMenuToggle {
         super._init({title: 'VPN', iconName: 'network-vpn-symbolic',
                      toggleMode: true});
         this.menu.setHeader('network-vpn-symbolic', 'VeloGuard VPN');
-        this.menu.addAction('Proton VPN', () => this._up('proton'));
-        this.menu.addAction('Surfshark',  () => this._up('surfshark'));
-        this.menu.addAction('NordVPN',    () => this._up('nord'));
+        for (const [label, name] of PROVIDERS)
+            this.menu.addAction(label, () => this._connect(name, label));
+        this.menu.addAction('Import config…', () => sh(`${VPN_UI} import`));
+        this.menu.addAction('Tor fallback', () => sh(
+            `if pkexec ${VPN} tor; then notify-send "VeloGuard" "Tor fallback enabled"; ` +
+            `else notify-send "VeloGuard" "Tor setup failed"; fi`));
+
+        // Main press: ON → connect the default profile; OFF → tear down.
         this.connect('clicked', () => {
             if (this.checked)
-                run('pkexec wg-quick up veloguard', 'VPN connecting…');
+                this._connect('veloguard', 'default profile');
             else
-                run('pkexec wg-quick down veloguard', 'VPN off');
+                sh(`pkexec ${VPN} disconnect; notify-send "VeloGuard" "VPN off"`);
+            this._syncSoon();
+        });
+
+        // The toggle reflects reality, not hope: poll the actual WireGuard
+        // interfaces (readable without root) and follow them.
+        this._timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
+            this._sync();
+            return GLib.SOURCE_CONTINUE;
+        });
+        this.connect('destroy', () => {
+            if (this._timer)
+                GLib.source_remove(this._timer);
+            this._timer = 0;
+        });
+        this._sync();
+    }
+
+    _connect(name, label) {
+        // rc 2 = no config yet → open the provider's config page and point the
+        // user at Import; other failures surface their exit code.
+        sh(`pkexec ${VPN} connect ${name}; rc=$?; ` +
+           `if [ $rc -eq 0 ]; then notify-send "VeloGuard" "VPN up: ${label} (now the default)"; ` +
+           `elif [ $rc -eq 2 ]; then url=$(${VPN} url ${name} 2>/dev/null); ` +
+           `[ -n "$url" ] && xdg-open "$url" >/dev/null 2>&1 || true; ` +
+           `notify-send "VeloGuard" "No ${label} config yet — download a WireGuard config, then VPN ▸ Import config…"; ` +
+           `else notify-send "VeloGuard" "VPN failed (code $rc) — try: veloguard-vpn status"; fi`);
+        this._syncSoon();
+    }
+
+    _syncSoon() {
+        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 3, () => {
+            try { this._sync(); } catch (_e) {}
+            return GLib.SOURCE_REMOVE;
         });
     }
-    _up(profile) {
-        this.checked = true;
-        run(`pkexec wg-quick up ${profile} 2>/dev/null || echo`,
-            `VPN: ${profile} (import a config first if this didn't connect)`);
+
+    _sync() {
+        try {
+            const proc = Gio.Subprocess.new(
+                ['ip', '-br', 'link', 'show', 'type', 'wireguard'],
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE);
+            proc.communicate_utf8_async(null, null, (p, res) => {
+                try {
+                    const [, out] = p.communicate_utf8_finish(res);
+                    const ifaces = (out ?? '').trim().split('\n').filter(Boolean)
+                        .map(l => l.split(/\s+/)[0].replace(/@.*$/, ''));
+                    this.checked = ifaces.length > 0;
+                    this.subtitle = ifaces[0] ?? null;
+                } catch (_e) {}
+            });
+        } catch (_e) {}
     }
 });
 
