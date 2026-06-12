@@ -1,5 +1,5 @@
 // VeloGuard GNOME integration:
-//   - VPN quick toggle wired to real providers (Proton/Mullvad/Surfshark) via
+//   - VPN quick toggle wired to real providers (Proton/Surfshark/NordVPN) via
 //     the veloguard-vpn helper: connect-or-get-a-config, zenity import flow,
 //     Tor fallback, and live state sync from the actual WireGuard interfaces.
 //   - Bulgarian Mode quick toggle.
