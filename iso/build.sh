@@ -242,7 +242,9 @@ ln -sf /etc/systemd/system/veloguard-wifi-autodetect.service \
   "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/veloguard-wifi-autodetect.service"
 mkdir -p "$PROFILE/airootfs/opt/veloguard/drivers"
 if pacman -Sw --noconfirm --cachedir "$PROFILE/airootfs/opt/veloguard/drivers" broadcom-wl >/dev/null 2>&1; then
-  rm -f "$PROFILE/airootfs/opt/veloguard/drivers"/*.sig
+  # -Sw drags dependencies (incl. the 150 MB kernel pkg) into the cachedir —
+  # the depot needs ONLY the wl package itself; everything else ships installed.
+  find "$PROFILE/airootfs/opt/veloguard/drivers" -type f ! -name 'broadcom-wl-*.pkg.tar.zst' -delete
   echo "  driver depot: $(ls "$PROFILE/airootfs/opt/veloguard/drivers")"
 else
   echo "  (broadcom-wl depot skipped — package unavailable)"
