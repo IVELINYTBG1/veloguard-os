@@ -1,32 +1,19 @@
 """AI attack analyst — turns a raw honeypot capture into a human report.
 
-Tiers the depth of analysis by what the user is running. The bonus for the tech
-community: run a **local high-end model** and you get the deepest diagnosis,
-entirely on your own hardware, nothing leaving the box.
+Diagnosis runs entirely on this machine, like everything else: the SNN brain
+produces the full report; without it (mock) you get offline heuristic triage.
 
-  deep      local (ollama) + a high-end model  → full diagnosis: technique,
-            likely CVE, MITRE-style mapping, IOCs, step-by-step remediation.
-  standard  any other LLM (small local / cloud) → classification, severity,
-            IOCs, one recommendation.
-  basic     no model (mock)                     → offline heuristic triage.
+  deep   the local SNN brain (guardd/snn.py)  → full diagnosis: technique,
+         likely CVE, MITRE-style mapping, IOCs, step-by-step remediation.
+  basic  no model (mock)                      → offline heuristic triage.
 """
 
 from __future__ import annotations
 
-_HIGHEND = ("70b", "72b", "65b", "34b", "33b", "30b", "27b", "405b",
-            "mixtral", "-large", "command-r-plus", "qwen2.5:32")
-
-
-def is_highend(model: str | None) -> bool:
-    m = (model or "").lower()
-    return any(k in m for k in _HIGHEND)
-
 
 def analysis_tier(provider: str, model: str | None) -> str:
-    if provider == "ollama" and is_highend(model):
-        return "deep"            # the bonus: local + powerful
-    if provider in ("ollama", "claude", "openai"):
-        return "standard"
+    if provider == "snn":
+        return "deep"
     return "basic"               # mock / no model
 
 
@@ -38,13 +25,9 @@ _SYSTEMS = {
         "(4) indicators of compromise (IPs, payload hashes, URLs, user-agents), "
         "(5) severity with justification, (6) concrete step-by-step remediation. "
         "Be specific and technical; this reader is an expert."),
-    "standard": (
-        "You are a security analyst reading a honeypot capture. In a short report: "
-        "classify the attack, give a severity (low/medium/high/critical), list the "
-        "indicators of compromise, and give one clear recommended action."),
 }
 
-_MAXTOK = {"deep": 900, "standard": 450}
+_MAXTOK = {"deep": 900}
 
 
 def _format_capture(cap: dict) -> str:

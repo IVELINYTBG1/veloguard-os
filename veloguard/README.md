@@ -13,10 +13,10 @@ product.
    ssh scanner"      {ip: …}           / ask user         (in-kernel netfilter)
        │                │                  │                  │
    ai_adapter.py    actions.py        policy.py          executor.py
-   (swappable:      (the only         (the GUARD:        (only code that
-    mock/claude/    contract the      consent, rate      touches the
-    codex/local)    AI can speak)     limit, protect)    kernel; dry-run
-                                                          by default)
+   (local brain:    (the only         (the GUARD:        (only code that
+    snn — in-       contract the      consent, rate      touches the
+    process — or    AI can speak)     limit, protect)    kernel; dry-run
+    mock fallback)                                        by default)
 ```
 
 ## This is the vertical slice
@@ -42,49 +42,32 @@ sudo python3 -m guardd --apply --setup
 sudo python3 -m guardd --apply --yes "block 203.0.113.10"
 ```
 
-## Two AI planes — pick what your machine can handle
+## The AI plane — local-only, by design
 
-Not everyone has a GPU rig, and not everyone wants to depend on the cloud. Both
-paths go through the exact same guard, so the safety story is identical.
-
-**Local** (private, free, needs a capable-ish PC) — see `provision/`:
-
-```bash
-python3 -m guardd --adapter ollama "kill the host hammering my ssh, 203.0.113.10"
-```
-
-**Cloud API** (runs on a potato, needs a key) — *no pip install, stdlib only*:
+There are no cloud APIs and no API keys. VeloGuardOS's brain is a **local
+spiking neural network** (SNN) running in-process — nothing you say to your
+machine ever leaves it. The model implementation lives in `guardd/snn.py`
+(its drop-in contract is documented at the top of that file; until the model
+code lands, the `snn` plane reports itself as pending).
 
 ```bash
-# Anthropic
-export ANTHROPIC_API_KEY=...
-python3 -m guardd --adapter claude "block 203.0.113.10"
-
-# Any OpenAI-compatible API (OpenAI/Codex, Groq, OpenRouter, local server…)
-export OPENAI_API_KEY=...
-# export VELOGUARD_OPENAI_BASE_URL=https://api.groq.com/openai/v1   # optional
-python3 -m guardd --adapter openai "block 203.0.113.10"
+python3 -m guardd --adapter snn  "block 203.0.113.10"   # the real brain (pending)
+python3 -m guardd --adapter mock "block 203.0.113.10"   # offline keyword fallback
 ```
 
-**Set your default once** in `config.json` (`"adapter": "ollama" | "claude" |
-"openai" | "mock"`) and drop the `--adapter` flag. The CLI flag always
-overrides the config.
+**Set your default once** in `config.json` (`"adapter": "snn" | "mock"`) and
+drop the `--adapter` flag. The CLI flag always overrides the config.
 
 ## Hot-swapping the core — runtime commands
 
-The active brain (provider + model + key) is **hot-swappable, but only when you
-type a command**. Nothing switches on its own. A swap takes effect on the *very
-next* intent.
+The active brain is **hot-swappable, but only when you type a command**.
+Nothing switches on its own. A swap takes effect on the *very next* intent.
 
 ```bash
-guardd use claude                 # switch active brain
-guardd use ollama llama3.2:3b     # switch brain AND pick its model in one go
-guardd key claude  sk-ant-...     # store an API key  (chmod 600, never logged)
-guardd key openai  sk-...
-guardd model openai gpt-4o        # pick a model for a provider
-guardd model ollama qwen2.5:3b    # ollama users often have several models
-guardd status                     # what's active; keys shown masked (…1234)
-guardd models                     # list the ollama models you've pulled
+guardd use snn                    # the local SNN brain
+guardd use mock                   # offline keyword fallback
+guardd model snn /path/to/weights # point the SNN at its model files
+guardd status                     # what's active
 ```
 
 (`guardd` = `python3 -m guardd`.) Where things live and who wins:
@@ -92,14 +75,12 @@ guardd models                     # list the ollama models you've pulled
 | Setting | Resolution order (first found wins) |
 |---------|-------------------------------------|
 | active provider | `--adapter` flag → stored (`guardd use`) → `config.json` → `mock` |
-| model | `$VELOGUARD_<P>_MODEL` → stored (`guardd model`) → built-in default |
-| API key | `$ANTHROPIC_API_KEY`/`$OPENAI_API_KEY` → stored (`guardd key`) → none |
+| model path | `$VELOGUARD_SNN_MODEL` → stored (`guardd model`) → default |
 
 Runtime state is written to `~/.config/veloguard/` (override with
-`$VELOGUARD_STATE`): `state.json` holds the non-secret selection, and
-`credentials.json` holds keys at `chmod 600`. **Keys are never written to the
-audit log or printed in full** — only `…last4`. Setting a key is itself audited
-(masked), so you can see *when* a brain's credentials changed.
+`$VELOGUARD_STATE`): `state.json` holds the selection. There are **no
+credentials anywhere** — the brain is local; a `credentials.json` left over
+from older builds is simply ignored.
 
 ## What the guard guarantees today
 
@@ -115,7 +96,7 @@ audit log or printed in full** — only `…last4`. Setting a key is itself audi
 
 | File | Plane | Role |
 |------|-------|------|
-| `guardd/ai_adapter.py` | AI | intent → Action; swap Claude / Codex / local |
+| `guardd/ai_adapter.py` | AI | intent → Action; snn (local) or mock |
 | `guardd/actions.py`    | — | the typed contract the AI is limited to |
 | `guardd/policy.py`     | control | allow / deny / needs-approval |
 | `guardd/executor.py`   | kernel | nftables today, netlink → VeloGuard LSM later |
@@ -181,13 +162,11 @@ veloguard honeypot --ports 2222,8080,2323 --analyze --block
 
 | Tier | When | What you get |
 |------|------|--------------|
-| **deep** ★ | local (ollama) **+ high-end** model (70B, mixtral…) | full IR report: technique, likely CVE, MITRE mapping, IOCs, step-by-step fix |
-| standard | any other LLM (small local / cloud) | classification, severity, IOCs, one recommendation |
+| full | the local SNN brain (once its model code lands in `guardd/snn.py`) | technique, severity, IOCs, recommended fix |
 | basic | no model (mock) | offline heuristic triage |
 
-Run a beefy **local** model → deepest diagnosis, entirely on your own hardware,
-nothing leaving the box. (Verified live: ollama diagnosed a Log4Shell+traversal
-payload; the heuristic flagged a sqlmap+dropper attack as HIGH.)
+Diagnosis happens entirely on your own hardware — nothing leaves the box.
+(The heuristic tier is verified live: it flagged a sqlmap+dropper attack HIGH.)
 
 ## Running the guard on a compatible Python
 
