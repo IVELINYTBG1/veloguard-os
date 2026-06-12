@@ -44,6 +44,23 @@ python
 # Wi-Fi backend (the real fix: NM needs wpa_supplicant or all nets show "open")
 wpa_supplicant
 
+# Wi-Fi on ANY hardware: every wifi-relevant firmware family explicitly (the
+# linux-firmware meta's coverage is not contractual), the regulatory db, and
+# mode-switching for USB dongles that enumerate as fake CD-ROMs. The one gap —
+# Broadcom chips needing proprietary 'wl' — ships as an OFFLINE package in
+# /opt/veloguard/drivers, installed on demand by veloguard-wifi-autodetect
+# (never preinstalled: wl's modprobe blacklists would break b43/brcmfmac users).
+linux-firmware-atheros
+linux-firmware-broadcom
+linux-firmware-intel
+linux-firmware-marvell
+linux-firmware-mediatek
+linux-firmware-qcom
+linux-firmware-realtek
+linux-firmware-other
+wireless-regdb
+usb_modeswitch
+
 # GUI dialogs: the restart-update prompt + the VPN "Import config…" flow
 zenity
 

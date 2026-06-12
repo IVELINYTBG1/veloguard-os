@@ -26,8 +26,8 @@ const VPN = '/usr/local/bin/veloguard-vpn';
 const VPN_UI = '/usr/local/bin/veloguard-vpn-ui';
 const PROVIDERS = [
     ['Proton VPN', 'proton'],
-    ['Mullvad', 'mullvad'],
     ['Surfshark', 'surfshark'],
+    ['NordVPN', 'nord'],
 ];
 
 function sh(cmd) {
@@ -47,8 +47,34 @@ class BgToggle extends QuickToggle {
     _init() {
         super._init({title: 'Bulgarian Mode', iconName: 'folder-music-symbolic',
                      toggleMode: true});
-        this.connect('clicked',
-            () => run('veloguard-bulgarian-mode toggle', '🇧🇬 Bulgarian Mode toggled'));
+        // the script reports failures itself (notify on assets-not-found etc.)
+        this.connect('clicked', () => {
+            sh('veloguard-bulgarian-mode toggle || ' +
+               'notify-send "VeloGuard" "Bulgarian Mode failed — run veloguard-bulgarian-mode selftest"');
+            GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, () => {
+                try { this._sync(); } catch (_e) {}
+                return GLib.SOURCE_REMOVE;
+            });
+        });
+        // checked follows the script's pidfile, so the toggle shows the truth
+        // even when the mode is flipped from a terminal.
+        this._pidfile = `${GLib.get_user_runtime_dir()}/veloguard-bgmode/wall.pid`;
+        this._timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
+            this._sync();
+            return GLib.SOURCE_CONTINUE;
+        });
+        this.connect('destroy', () => {
+            if (this._timer)
+                GLib.source_remove(this._timer);
+            this._timer = 0;
+        });
+        this._sync();
+    }
+
+    _sync() {
+        try {
+            this.checked = GLib.file_test(this._pidfile, GLib.FileTest.EXISTS);
+        } catch (_e) {}
     }
 });
 

@@ -15,10 +15,15 @@ INTERVAL="${VELOGUARD_BGMODE_SECONDS:-20}"
 STATE="${XDG_RUNTIME_DIR:-/tmp}/veloguard-bgmode"
 SAVED="$STATE/wallpaper.saved"
 
-# Find the assets folder: env override → installed path → repo folder.
+# Find the assets folder: env override → installed paths → repo folder.
+# Resolve $0 through symlinks first: the quick-settings button invokes us via
+# /usr/local/bin (a symlink), which made the repo-relative fallback resolve to
+# /Bulgarian_Mode and the button fail with "assets not found" on every click.
+SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
 ASSETS=""
 for d in "${VELOGUARD_BG_DIR:-}" "/usr/share/veloguard/Bulgarian_Mode" \
-         "$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd)/Bulgarian_Mode"; do
+         "/opt/Bulgarian_Mode" \
+         "$(cd "$(dirname "$SELF")/../.." 2>/dev/null && pwd)/Bulgarian_Mode"; do
   [ -n "$d" ] && [ -d "$d" ] && { ASSETS="$d"; break; }
 done
 WALL="$ASSETS/wallpapers"

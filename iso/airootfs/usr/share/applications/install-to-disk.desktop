@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=Install VeloGuardOS
-Comment=Install VeloGuardOS to your drive
-Exec=bash -c "sudo archinstall; echo; read -p 'Press Enter to close…'"
+Comment=Install VeloGuardOS to your drive (graphical installer)
+Exec=/usr/local/bin/veloguard-install-gui
 Icon=system-os-installer
-Terminal=true
+Terminal=false
 Categories=System;Settings;
-Keywords=install;installer;disk;
+Keywords=install;installer;disk;calamares;

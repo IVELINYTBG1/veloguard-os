@@ -34,6 +34,10 @@ provider_url() {
     proton)    echo "https://account.protonvpn.com/downloads" ;;
     mullvad)   echo "https://mullvad.net/en/account/wireguard-config" ;;
     surfshark) echo "https://my.surfshark.com/vpn/manual-setup/main" ;;
+    # Nord has no official plain-WireGuard download — the dashboard's manual
+    # setup (or a NordLynx key extracted with an access token) yields a .conf
+    # that imports fine here.
+    nord)      echo "https://my.nordaccount.com/dashboard/nordvpn/" ;;
     *) return 1 ;;
   esac
 }
@@ -119,7 +123,7 @@ case "$cmd" in
     else warn "install 'tor' manually"; exit 1; fi
     priv systemctl enable --now tor && say "Tor fallback ready (use profile 'tor')"
     ;;
-  proton|mullvad|surfshark)
+  proton|mullvad|surfshark|nord)
     say "$cmd: $(provider_url "$cmd") → download a WireGuard config → veloguard-vpn import <file> $cmd"
     ;;
   status)

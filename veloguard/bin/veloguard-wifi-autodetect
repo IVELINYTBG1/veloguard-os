@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+#
+# veloguard-wifi-autodetect — make Wi-Fi work on ANY hardware, automatically.
+#
+# Finds wifi-class hardware that has no driver bound and fixes what can be
+# fixed: load the module the modalias points at, flag missing firmware by
+# family, and for Broadcom chips that only the proprietary 'wl' driver
+# supports, install it OFFLINE from /opt/veloguard/drivers (downloaded at ISO
+# build time) — wl is never installed unless such a chip is actually present,
+# because its blacklists would break b43/brcmfmac users.
+#
+#   veloguard-wifi-autodetect            # detect + fix (root; what the boot service runs)
+#   veloguard-wifi-autodetect --report   # read-only: list unclaimed hardware
+#
+set -uo pipefail
+REPORT=0; [ "${1:-}" = "--report" ] && REPORT=1
+LOG=/var/log/veloguard-wifi-autodetect.log
+log() { printf '%s\n' "$*"; [ -w "$(dirname "$LOG")" ] && printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" >> "$LOG" 2>/dev/null || true; }
+
+# Wi-Fi USB vendors (Realtek, Ralink/MediaTek, Atheros, Edimax, TP-Link, ASUS,
+# D-Link, Netgear, Linksys, MediaTek, Microchip/Ralink OEM, Belkin)
+USB_WIFI_VENDORS="0bda 148f 0cf3 7392 2357 0b05 2001 0846 13b1 0e8d 3574 050d"
+
+unclaimed_pci() {  # wifi = PCI class 0x0280xx (network controller, non-ethernet)
+    for dev in /sys/bus/pci/devices/*; do
+        [ -e "$dev/class" ] || continue
+        case "$(cat "$dev/class")" in 0x0280*) ;; *) continue ;; esac
+        [ -e "$dev/driver" ] && continue
+        printf 'pci %s %s:%s %s\n' "$(basename "$dev")" \
+            "$(cat "$dev/vendor")" "$(cat "$dev/device")" "$(cat "$dev/modalias")"
+    done
+}
+
+unclaimed_usb() {  # wireless-class or vendor-specific interfaces from wifi vendors
+    for intf in /sys/bus/usb/devices/*:*; do
+        [ -e "$intf/bInterfaceClass" ] || continue
+        [ -e "$intf/driver" ] && continue
+        cls="$(cat "$intf/bInterfaceClass")"
+        case "$cls" in e0|ff) ;; *) continue ;; esac
+        dev="/sys/bus/usb/devices/${intf##*/}"; dev="${dev%%:*}"
+        vid="$(cat "$dev/idVendor" 2>/dev/null)"; pid="$(cat "$dev/idProduct" 2>/dev/null)"
+        case " $USB_WIFI_VENDORS " in *" $vid "*) ;; *) continue ;; esac
+        printf 'usb %s %s:%s %s\n' "$(basename "$intf")" "$vid" "$pid" "$(cat "$intf/modalias")"
+    done
+}
+
+list="$( { unclaimed_pci; unclaimed_usb; } 2>/dev/null )"
+
+if [ "$REPORT" = 1 ]; then
+    if [ -n "$list" ]; then
+        printf '%s\n' "$list" | while IFS= read -r l; do log "  UNCLAIMED: $l"; done
+    else
+        log "  all wifi-class hardware has a driver bound"
+    fi
+    exit 0
+fi
+
+[ "$(id -u)" = 0 ] || { log "fixing needs root (use --report to just look)"; exit 1; }
+
+if [ -z "$list" ]; then
+    log "wifi autodetect: nothing unclaimed — OK"
+    exit 0
+fi
+
+fixed=""
+while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    set -- $entry   # bus addr vid:pid modalias
+    bus="$1"; addr="$2"; ids="$3"; alias="$4"
+    log "unclaimed $bus device $addr ($ids) — trying its modalias driver…"
+    modprobe "$alias" 2>/dev/null || true
+
+    # Broadcom PCI with no in-tree driver → the proprietary wl, offline install
+    if [ "$bus" = pci ] && [ "${ids%%:*}" = "0x14e4" ] && [ ! -e "/sys/bus/pci/devices/$addr/driver" ]; then
+        pkg="$(ls /opt/veloguard/drivers/broadcom-wl-*.pkg.tar.zst 2>/dev/null | head -1)"
+        if [ -n "$pkg" ] && ! pacman -Qq broadcom-wl >/dev/null 2>&1; then
+            log "Broadcom $ids needs the proprietary 'wl' — installing offline: $(basename "$pkg")"
+            pacman -U --noconfirm "$pkg" >/dev/null 2>&1 && modprobe wl 2>/dev/null || \
+                log "  wl install failed — see pacman output"
+        elif [ -n "$pkg" ]; then
+            modprobe wl 2>/dev/null || true
+        else
+            log "  no offline wl package in /opt/veloguard/drivers"
+        fi
+    fi
+
+    udevadm settle 2>/dev/null || true
+    if { [ "$bus" = pci ] && [ -e "/sys/bus/pci/devices/$addr/driver" ]; } || \
+       { [ "$bus" = usb ] && [ -e "/sys/bus/usb/devices/$addr/driver" ]; }; then
+        log "  → driver bound for $addr"
+        fixed=1
+    else
+        log "  → still unclaimed; likely missing firmware — check: dmesg | grep -i firmware"
+        log "    (firmware families ship preinstalled: atheros/broadcom/intel/mediatek/qcom/realtek/other)"
+    fi
+done <<< "$list"
+
+rfkill unblock all 2>/dev/null || true
+if [ -n "$fixed" ]; then
+    log "wifi autodetect: new driver(s) bound — NetworkManager will pick the device up"
+    command -v notify-send >/dev/null && notify-send "VeloGuard" "Wi-Fi adapter detected and enabled" 2>/dev/null || true
+fi
+exit 0

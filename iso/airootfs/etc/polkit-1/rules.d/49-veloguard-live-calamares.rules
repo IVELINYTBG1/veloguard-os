@@ -1,0 +1,10 @@
+// LIVE ISO ONLY (removed from installed systems by calamares-target-cleanup):
+// let the live user start the installer without a password prompt — the live
+// account has none to type. Fixed program path, wheel + active + local.
+polkit.addRule(function (action, subject) {
+    if (action.id === "org.freedesktop.policykit.exec" &&
+        action.lookup("program") === "/usr/bin/calamares" &&
+        subject.active && subject.local && subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});

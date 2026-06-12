@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Install VeloGuardOS (advanced, terminal)
+Comment=Text-mode installer for full manual control
+Exec=bash -c "sudo archinstall; echo; read -p 'Press Enter to close…'"
+Icon=utilities-terminal
+Terminal=true
+Categories=System;Settings;
+Keywords=install;installer;archinstall;terminal;
+NoDisplay=false
