@@ -1,7 +1,7 @@
 """Voice assistant — wake word → listen → the AI reasons → speak (context-aware).
 
 USERSPACE. It ties together: wake-word detection (openWakeWord), speech-to-text
-(faster-whisper), the active AI plane (Claude/OpenAI/Ollama — and it can call the
+(faster-whisper), the active AI plane (the local SNN brain — and it can call the
 guard's tools), and text-to-speech (Piper, or IndexTTS2 as a drop-in backend).
 
 The key idea you asked for is CONTEXT-AWARENESS: before speaking, the AI decides
@@ -103,7 +103,8 @@ def _wake_loop():
 def run(once: bool = False) -> int:
     provider = state.active_provider(config_default="mock")
     if provider == "mock":
-        print("voice needs an AI plane — run: guardd use ollama|claude|openai")
+        print("voice needs a real brain — run: guardd use snn "
+              "(replies come with the SNN model code)")
         return 2
     cfg = state.adapter_config(provider)
     try:
@@ -122,9 +123,13 @@ def run(once: bool = False) -> int:
                 break
             continue
         print(f"  you: {text}")
-        reply = adapter.complete(
-            "You are VeloGuard's voice assistant. Be brief and helpful.",
-            text, 300)
+        try:
+            reply = adapter.complete(
+                "You are VeloGuard's voice assistant. Be brief and helpful.",
+                text, 300)
+        except NotImplementedError as e:
+            print(f"  ai : (not yet) {e}")
+            return 2
         print(f"  ai : {reply}")
         if should_speak(CONTEXT(), adapter):
             speak(reply)

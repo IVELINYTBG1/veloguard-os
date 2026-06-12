@@ -1,7 +1,7 @@
 """The agentic tool surface — every kernel-tool capability, as callable tools.
 
 This is the single source of truth for "what an AI agent can do to the system."
-It renders to whatever an agent API expects (Anthropic / OpenAI / Ollama tool
+It renders to whatever a consumer expects (the SNN planner / MCP tool
 schemas, or MCP `inputSchema`), and maps each tool back to a guard action or a
 read handler. Mutating tools ALWAYS run through the guard (policy + consent +
 audit) — see dispatch.py. Read tools never mutate.
@@ -50,7 +50,7 @@ TOOLS: list[dict] = [
                 "net": {"type": "boolean"}}, "required": ["target"]},
     # --- read-only tools (safe at any autonomy level) ---
     {"name": "status", "kind": "read", "mutating": False,
-     "description": "Active AI plane, model, and which keys are set (masked).",
+     "description": "Active AI plane and its model path.",
      "params": {}, "required": []},
     {"name": "classify_network", "kind": "read", "mutating": False,
      "description": "Judge a Wi-Fi network: trusted / untrusted / unknown.",
@@ -81,19 +81,14 @@ def _schema(t: dict) -> dict:
             "required": t.get("required", [])}
 
 
-def anthropic_tools() -> list[dict]:
+# The cloud renderers (anthropic/openai/ollama tool shapes) are gone with the
+# API plane. The registry itself is brain-agnostic: the SNN planner consumes
+# this plain shape, and MCP keeps its own rendering below.
+
+def snn_tools() -> list[dict]:
+    """The registry in plain shape — what the SNN planner will read."""
     return [{"name": t["name"], "description": t["description"],
-             "input_schema": _schema(t)} for t in TOOLS]
-
-
-def openai_tools() -> list[dict]:
-    return [{"type": "function",
-             "function": {"name": t["name"], "description": t["description"],
-                          "parameters": _schema(t)}} for t in TOOLS]
-
-
-# Ollama uses the OpenAI-style tool shape.
-ollama_tools = openai_tools
+             "schema": _schema(t)} for t in TOOLS]
 
 
 def mcp_tools() -> list[dict]:

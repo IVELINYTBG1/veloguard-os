@@ -7,13 +7,10 @@ Two kinds of command:
     python3 -m guardd --apply --yes "block 203.0.113.10"     # for real, no prompt
 
   CONTROL the core (hot-swap — takes effect on the very next intent):
-    python3 -m guardd use claude                 # switch active brain
-    python3 -m guardd use ollama llama3.2:3b      # switch brain AND pick its model
-    python3 -m guardd key claude sk-ant-...       # store an API key (chmod 600)
-    python3 -m guardd key openai sk-...
-    python3 -m guardd model openai gpt-4o          # pick a model for a provider
-    python3 -m guardd status                       # what's active, keys (masked)
-    python3 -m guardd models                       # local ollama models available
+    python3 -m guardd use snn                     # the local SNN brain (no cloud, no keys)
+    python3 -m guardd use mock                    # offline keyword fallback
+    python3 -m guardd model snn /path/to/weights  # point the SNN at its model files
+    python3 -m guardd status                      # what's active
 
   PROTECT:
     python3 -m guardd net --ssid Cafe --security open   # classify wifi, auto-VPN
@@ -49,7 +46,7 @@ VELOGUARD_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_POLICY_PATH = VELOGUARD_DIR / "policy.json"
 CONFIG_PATH = VELOGUARD_DIR / "config.json"
 
-CONTROL_VERBS = {"setup", "use", "key", "model", "status", "models",
+CONTROL_VERBS = {"setup", "use", "model", "status",
                  "providers", "net", "honeypot", "analyze", "run-safe",
                  "update", "agent", "mcp", "voice", "help"}
 
@@ -69,7 +66,7 @@ def _configured_adapter() -> str:
 _BANNER = """
 \033[1;36m┌────────────────────────────────────────────────┐
 │  VeloGuardOS  ·  setup                          │
-│  AI-first. Local or cloud. You stay in control. │
+│  AI-first. Local-only brain. Nothing leaves.    │
 └────────────────────────────────────────────────┘\033[0m"""
 
 
@@ -80,14 +77,6 @@ def _ask(prompt: str, default: str | None = None) -> str:
     except EOFError:
         val = ""
     return val or (default or "")
-
-
-def _ask_secret(prompt: str) -> str:
-    import getpass
-    try:
-        return getpass.getpass(f"{prompt}: ").strip()
-    except Exception:          # no tty (e.g. piped) — fall back to plain read
-        return _ask(prompt)
 
 
 def _choose(prompt: str, options: list[tuple[str, str]], default: int = 1) -> str:
@@ -118,52 +107,16 @@ def _test_connection(provider: str) -> bool:
         return False
 
 
-def _setup_local() -> None:
-    models = state.list_ollama_models()
-    if not models:
-        print("\n  No local models found yet.")
-        if _ask("  Pull a recommended model now (~2 GB)? [Y/n]", "Y").lower() in ("y", "yes"):
-            name = _ask("  model to pull", "llama3.2:3b")
-            print(f"  pulling {name} … (this can take a while)")
-            import subprocess
-            subprocess.run(["ollama", "pull", name])
-            models = state.list_ollama_models()
-    if models:
-        choice = _choose("\n  Pick the model to use:", [(m, m) for m in models])
-    else:
-        choice = _ask("\n  model name to use", "llama3.2:3b")
-    state.set_active("ollama")
-    state.set_model("ollama", choice)
-    record({"control": "setup", "plane": "local", "provider": "ollama",
-            "model": choice, "result": "ok"})
-    print(f"\n  → local plane ready (ollama · {choice}) — nothing leaves this machine.")
-
-
-def _setup_api() -> None:
-    provider = _choose("\n  Which API?", [
-        ("claude", "Claude  (Anthropic)"),
-        ("openai", "OpenAI / Codex-compatible  (also Groq, OpenRouter, local servers)"),
-    ])
-    key = _ask_secret(f"  paste your {provider} API key (hidden)")
-    if key:
-        state.set_key(provider, key)
-    if provider == "openai":
-        base = _ask("  API base URL", "https://api.openai.com/v1")
-        if base and base != "https://api.openai.com/v1":
-            state.set_base_url("openai", base)
-        model = _ask("  model", "gpt-4o-mini")
-    else:
-        model = _choose("  model:", [
-            ("claude-haiku-4-5", "Haiku  — fast & cheap (recommended for intent parsing)"),
-            ("claude-sonnet-4-6", "Sonnet — stronger"),
-            ("claude-opus-4-8", "Opus   — strongest"),
-        ])
-    state.set_model(provider, model)
-    state.set_active(provider)
-    # The key VALUE is never recorded — only that setup stored one.
-    record({"control": "setup", "plane": "api", "provider": provider,
-            "model": model, "key": state.mask(key), "result": "ok"})
-    print(f"\n  → cloud plane ready ({provider} · {model} · key {state.mask(key) or '—'})")
+def _setup_snn() -> None:
+    path = _ask("\n  SNN model path (blank = default, set later with "
+                "'guardd model snn <path>')")
+    if path:
+        state.set_model("snn", path)
+    state.set_active("snn")
+    record({"control": "setup", "plane": "snn",
+            "model": path or None, "result": "ok"})
+    print("\n  → SNN plane selected — in-process, nothing leaves this machine.")
+    print("    (model code pending: intents will say so until it lands in guardd/snn.py)")
 
 
 def _setup_wizard() -> int:
@@ -172,22 +125,19 @@ def _setup_wizard() -> int:
         print("\033[2m(non-interactive input — reading answers from stdin)\033[0m")
 
     plane = _choose("\nChoose your AI plane:", [
-        ("local", "Local   — Ollama on this machine. Private, free, needs a capable PC."),
-        ("api",   "Cloud   — Claude or OpenAI/Codex. Runs on a potato, needs an API key."),
-        ("none",  "Skip    — offline keyword mode (mock); set it up later."),
-    ])
+        ("snn",  "SNN   — VeloGuard's built-in local neural brain (model lands soon)"),
+        ("mock", "Mock  — offline keyword mode; deterministic, works today"),
+    ], default=2)
 
-    if plane == "none":
+    if plane == "mock":
         state.set_active("mock")
-        record({"control": "setup", "plane": "none", "result": "ok"})
+        record({"control": "setup", "plane": "mock", "result": "ok"})
         print("\n  → offline mock mode. Run 'guardd setup' again any time.")
-    elif plane == "local":
-        _setup_local()
     else:
-        _setup_api()
+        _setup_snn()
 
     active = state.active_provider(config_default=_configured_adapter())
-    if active != "mock" and _ask("\nTest the connection now? [Y/n]", "Y").lower() in ("y", "yes"):
+    if active == "mock" and _ask("\nTest the brain now? [Y/n]", "Y").lower() in ("y", "yes"):
         _test_connection(active)
 
     # Voice assistant wake word (optional; engines via provision/install-voice.sh)
@@ -388,16 +338,14 @@ def _agent(rest: list[str]) -> int:
 
     provider = state.active_provider(config_default=_configured_adapter())
     if provider == "mock":
-        print("agent needs a tool-capable AI plane — run: guardd use ollama|claude|openai",
-              file=sys.stderr)
+        print("agent needs the SNN brain — run: guardd use snn "
+              "(its planner lands with the model code)", file=sys.stderr)
         return 2
     cfg = state.adapter_config(provider)
-    print(f"agent: {provider}/{cfg.get('model') or '-'} · autonomy={autonomy} · "
+    print(f"agent: {provider}/{cfg.get('model_path') or '-'} · autonomy={autonomy} · "
           f"{'APPLY' if apply else 'dry-run'}")
     try:
-        result = agent.run(goal, provider, model=cfg.get("model"), key=cfg.get("key"),
-                           base_url=cfg.get("base_url"),
-                           host=os.environ.get("VELOGUARD_OLLAMA_HOST"),
+        result = agent.run(goal, provider, model=cfg.get("model_path"),
                            autonomy=autonomy, apply=apply, max_steps=max_steps)
     except (RuntimeError, KeyError, ValueError) as e:
         print(f"agent error: {e}", file=sys.stderr)
@@ -600,8 +548,7 @@ def _control(argv: list[str]) -> int:
 
     if verb == "providers":
         for p in state.PROVIDERS:
-            tag = " (needs API key)" if p in state.KEYED else (
-                " (local)" if p == "ollama" else "")
+            tag = " (local SNN brain — model pending)" if p == "snn" else " (offline keywords)"
             print(f"  {p}{tag}")
         return 0
 
@@ -620,31 +567,12 @@ def _control(argv: list[str]) -> int:
             state.set_model(provider, rest[1])
             msg += f"  (model: {rest[1]})"
         print(msg)
-        # Friendly nudges, not errors.
-        if provider in state.KEYED and not state.key_for(provider):
-            print(f"  ⚠ no API key yet — run:  guardd key {provider} <YOUR_KEY>")
-        if provider == "ollama":
-            _warn_if_model_missing(state.model_for("ollama"))
+        if provider == "snn":
+            print("  ⚠ SNN model code pending — intents will say so until it "
+                  "lands in guardd/snn.py")
         record({"control": "use", "provider": provider,
                 "model": state.model_for(provider) if provider != "mock" else None,
                 "result": "ok"})
-        return 0
-
-    if verb == "key":
-        if len(rest) < 2:
-            print("usage: guardd key <claude|openai> <API_KEY>", file=sys.stderr)
-            return 2
-        provider, api_key = rest[0], rest[1]
-        if provider not in state.KEYED:
-            print(f"{provider!r} does not use an API key "
-                  f"(keyed providers: {', '.join(state.KEYED)})", file=sys.stderr)
-            return 2
-        state.set_key(provider, api_key)
-        print(f"stored {provider} API key ({state.mask(api_key)}) → "
-              f"{state.state_dir()}/credentials.json (chmod 600)")
-        # The key VALUE is never recorded — only that one was set.
-        record({"control": "key", "provider": provider,
-                "key": state.mask(api_key), "result": "stored"})
         return 0
 
     if verb == "model":
@@ -657,20 +585,8 @@ def _control(argv: list[str]) -> int:
             return 2
         state.set_model(provider, model)
         print(f"{provider} model → {model}")
-        if provider == "ollama":
-            _warn_if_model_missing(model)
         record({"control": "model", "provider": provider,
                 "model": model, "result": "ok"})
-        return 0
-
-    if verb == "models":
-        models = state.list_ollama_models()
-        if not models:
-            print("no local ollama models found (is ollama running? try: ollama pull llama3.2:3b)")
-        else:
-            current = state.model_for("ollama")
-            for m in models:
-                print(f"  {'*' if m == current else ' '} {m}")
         return 0
 
     if verb == "status":
@@ -678,26 +594,14 @@ def _control(argv: list[str]) -> int:
         print(f"active AI plane : {active}")
         print("providers:")
         for p in state.PROVIDERS:
-            line = f"  {'➤' if p == active else ' '} {p:<7}"
-            if p != "mock":
-                line += f" model={state.model_for(p)}"
-            if p in state.KEYED:
-                src = state.key_source(p)
-                key = state.key_for(p)
-                line += f"  key={state.mask(key)} ({src})" if key else "  key=—"
+            line = f"  {'➤' if p == active else ' '} {p:<5}"
+            if p == "snn":
+                line += f" model={state.model_for('snn') or '(default path)'}  [model code pending]"
             print(line)
-        local = state.list_ollama_models()
-        if local:
-            print(f"local ollama models: {', '.join(local)}")
         return 0
 
     print(f"unknown command {verb!r}. Try: guardd help", file=sys.stderr)
     return 2
-
-
-def _warn_if_model_missing(model: str | None) -> None:
-    if model and model not in state.list_ollama_models():
-        print(f"  ⚠ '{model}' not pulled yet — run:  ollama pull {model}")
 
 
 # ===========================================================================
@@ -711,7 +615,10 @@ def _confirm(action: Action, decision: Decision) -> bool:
         f"  policy: {decision.reason}\n"
         f"  approve? [y/N] ")
     sys.stderr.flush()
-    return input().strip().lower() in ("y", "yes")
+    try:
+        return input().strip().lower() in ("y", "yes")
+    except EOFError:           # no stdin (piped/service) — never assume consent
+        return False
 
 
 def _execute(action: Action, ex: NftExecutor) -> str:

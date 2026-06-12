@@ -1,5 +1,5 @@
 {
-  "_comment": "Pick your AI plane once. CLI --adapter overrides this.",
-  "_choices": "mock (offline) | ollama (local, private) | claude (API) | openai (API/Codex-compatible)",
+  "_comment": "The AI plane. Local-only by design: no cloud APIs, no keys.",
+  "_choices": "mock (offline keyword matching) | snn (local spiking neural net — model code lands in guardd/snn.py)",
   "adapter": "mock"
 }

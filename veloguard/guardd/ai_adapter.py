@@ -1,68 +1,28 @@
-"""The AI plane — pluggable and swappable, exactly as the architecture demands.
+"""The AI plane — local-only, exactly as the architecture demands.
 
-Every adapter turns a human/AI natural-language *intent* into a structured
-`Action`. The rest of VeloGuard neither knows nor cares whether that came from
-Claude, Codex/OpenAI, a local llama, or a dumb regex. Swap the adapter, keep
-the guard.
+Every adapter turns a human *intent* into a structured `Action`. The rest of
+VeloGuard neither knows nor cares where that came from. The cloud-API adapters
+(Claude/OpenAI) and the Ollama HTTP client are GONE by design: VeloGuardOS's
+brain is a local spiking neural network (guardd/snn.py) running in-process —
+no API, no key, no HTTP, nothing leaves the box.
 
-Two real choices, for two kinds of machine:
-  * LOCAL  (ollama)         — private, free, needs a capable-ish PC
-  * CLOUD  (claude/openai)  — works on a potato, needs an API key
-
-Every cloud adapter here is STDLIB-ONLY (urllib) — no `pip install` required.
+Two planes:
+  * snn   — the real brain (model code lands in guardd/snn.py; pending)
+  * mock  — deterministic keyword parser; offline fallback that always works
 """
 
 from __future__ import annotations
 
-import json
-import os
 import re
-import urllib.error
-import urllib.request
-from abc import ABC, abstractmethod
 
 from .actions import Action, ActionType
 
 _IP_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
 
-# The structured shape every LLM is asked to emit. One enum + an optional IP.
-_PROPERTIES = {
-    "type": {"type": "string", "enum": [t.value for t in ActionType]},
-    "ip": {"type": "string", "description": "IPv4 address copied from the request"},
-    "target": {"type": "string",
-               "description": "VPN profile name (or 'tor'), or a process pid/name"},
-    "rationale": {"type": "string"},
-}
-_SYSTEM = (
-    "You are the intent parser for VeloGuard, a security daemon. Map the user's "
-    "request to exactly one action:\n"
-    "- block_ip / unblock_ip: block or allow a host (put the IP in 'ip').\n"
-    "- list_blocked: show the blocklist.\n"
-    "- vpn_up / vpn_down: turn the VPN on/off ('target' = profile or 'tor').\n"
-    "- quarantine: isolate a process ('target' = pid/name).\n"
-    "- release_quarantine / kill_quarantine: free or kill a quarantined process.\n"
-    "- noop: nothing fits.\n"
-    "Copy any IP or target from the request verbatim; never invent one."
-)
-
-
-def _post(url: str, payload: dict, headers: dict, timeout: int = 60) -> dict:
-    """Minimal stdlib JSON POST. Raises RuntimeError with a useful message."""
-    req = urllib.request.Request(
-        url, data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json", **headers})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"{url} -> HTTP {e.code}: {e.read().decode()[:300]}") from e
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"cannot reach {url}: {e.reason}") from e
-
 
 def _resolve_ip(model_ip: str | None, intent: str) -> str | None:
     """Anti-hallucination: the only valid IP is one the user actually typed.
-    Applies to *every* LLM adapter — the guard never acts on an invented host."""
+    Applies to *every* brain — the guard never acts on an invented host."""
     m = _IP_RE.search(intent)
     text_ip = m.group(1) if m else None
     if model_ip and model_ip != text_ip:
@@ -87,7 +47,7 @@ def _build_action(data: dict, intent: str) -> Action:
 
 def _heuristic_report(text: str) -> str:
     """Offline attack triage — pattern-match common signatures. The 'basic' tier
-    when there's no LLM. Real diagnosis needs a model (ideally local + high-end)."""
+    when the SNN isn't loaded. Real diagnosis needs the model."""
     t = text.lower()
     sigs = []
     if any(s in t for s in ("union select", "' or '1'='1", "sqlmap", " or 1=1")):
@@ -108,15 +68,14 @@ def _heuristic_report(text: str) -> str:
             "Log4Shell (CVE-2021-44228) probe"}
     sev = "HIGH" if high & set(sigs) else "MEDIUM"
     return (f"[heuristic triage] Likely: {', '.join(sigs)}. Severity: {sev}.\n"
-            "Enable a local or cloud AI model for a full diagnosis.")
+            "The SNN brain will produce a full diagnosis once integrated.")
 
 
-class AIAdapter(ABC):
+class AIAdapter:
     name = "abstract"
 
-    @abstractmethod
     def parse(self, intent: str) -> Action:
-        ...
+        raise NotImplementedError
 
     def complete(self, system: str, user: str, max_tokens: int = 600) -> str:
         """Free-form text in → text out. Used for attack analysis (not parsing)."""
@@ -124,8 +83,8 @@ class AIAdapter(ABC):
 
 
 class MockAdapter(AIAdapter):
-    """Zero-dependency keyword parser. Proves the pipeline, runs anywhere with
-    no key and no model. Deterministic, offline, free."""
+    """Zero-dependency keyword parser. Proves the pipeline, runs anywhere.
+    Deterministic, offline, free — and the interim default until the SNN lands."""
 
     name = "mock"
 
@@ -185,150 +144,29 @@ class MockAdapter(AIAdapter):
         return _heuristic_report(user)
 
 
-class OllamaAdapter(AIAdapter):
-    """LOCAL AI plane — no cloud, no key, nothing leaves the box. Needs Ollama
-    running and a model pulled. Best for users with a capable PC who want
-    privacy. Uses Ollama's JSON-schema mode so even small models stay structured.
+class SNNAdapter(AIAdapter):
+    """LOCAL SNN plane — an in-process spiking neural network. No API, no key,
+    no HTTP. The model implementation lives in guardd/snn.py (pending: its
+    methods raise NotImplementedError with a clear message until the code lands)."""
 
-    Env: VELOGUARD_OLLAMA_HOST (default http://localhost:11434),
-         VELOGUARD_OLLAMA_MODEL (default llama3.2:1b)
-    """
+    name = "snn"
 
-    name = "ollama"
-    _SCHEMA = {"type": "object", "properties": _PROPERTIES,
-               "required": ["type", "rationale"]}
-
-    def __init__(self, host: str | None = None, model: str | None = None, **_) -> None:
-        self.host = host or os.environ.get("VELOGUARD_OLLAMA_HOST", "http://localhost:11434")
-        self.model = model or os.environ.get("VELOGUARD_OLLAMA_MODEL", "llama3.2:1b")
+    def __init__(self, model_path: str | None = None, **_) -> None:
+        from . import snn
+        self.brain = snn.SNNBrain(model_path=model_path)
 
     def parse(self, intent: str) -> Action:
-        body = _post(f"{self.host}/api/chat", {
-            "model": self.model,
-            "messages": [{"role": "system", "content": _SYSTEM},
-                         {"role": "user", "content": intent}],
-            "stream": False, "format": self._SCHEMA,
-            "options": {"temperature": 0},
-        }, headers={})
-        content = body.get("message", {}).get("content", "").strip()
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError as e:
-            raise RuntimeError(f"Ollama returned non-JSON: {content!r}") from e
-        return _build_action(data, intent)
+        # The brain proposes a dict; _build_action + _resolve_ip keep it honest,
+        # and policy.py still has the only real say.
+        return _build_action(self.brain.parse_intent(intent), intent)
 
     def complete(self, system: str, user: str, max_tokens: int = 600) -> str:
-        body = _post(f"{self.host}/api/chat", {
-            "model": self.model,
-            "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": user}],
-            "stream": False,
-            "options": {"temperature": 0.2, "num_predict": max_tokens},
-        }, headers={})
-        return body.get("message", {}).get("content", "").strip()
-
-
-class ClaudeAdapter(AIAdapter):
-    """CLOUD AI plane via the Anthropic API — stdlib only, no SDK needed. Runs
-    on the weakest machine; just needs ANTHROPIC_API_KEY. Uses Haiku (cheap
-    intent classification) and tool-use to force structured output.
-
-    Env: ANTHROPIC_API_KEY, VELOGUARD_CLAUDE_MODEL (default claude-haiku-4-5)
-    """
-
-    name = "claude"
-    API = "https://api.anthropic.com/v1/messages"
-    _TOOL = {"name": "emit_action",
-             "description": "Translate the security intent into one VeloGuard action.",
-             "input_schema": {"type": "object", "properties": _PROPERTIES,
-                              "required": ["type", "rationale"]}}
-
-    def __init__(self, key: str | None = None, model: str | None = None, **_) -> None:
-        self.key = key or os.environ.get("ANTHROPIC_API_KEY")
-        if not self.key:
-            raise RuntimeError(
-                "no Claude API key — run:  guardd key claude <YOUR_KEY>  "
-                "(or export ANTHROPIC_API_KEY)")
-        self.model = model or os.environ.get("VELOGUARD_CLAUDE_MODEL", "claude-haiku-4-5")
-
-    def parse(self, intent: str) -> Action:
-        body = _post(self.API, {
-            "model": self.model, "max_tokens": 512,
-            "system": _SYSTEM, "tools": [self._TOOL],
-            "tool_choice": {"type": "tool", "name": "emit_action"},
-            "messages": [{"role": "user", "content": intent}],
-        }, headers={"x-api-key": self.key, "anthropic-version": "2023-06-01"})
-        for block in body.get("content", []):
-            if block.get("type") == "tool_use":
-                return _build_action(block["input"], intent)
-        return Action(ActionType.NOOP, {}, rationale="model emitted no action")
-
-    def complete(self, system: str, user: str, max_tokens: int = 600) -> str:
-        body = _post(self.API, {
-            "model": self.model, "max_tokens": max_tokens, "system": system,
-            "messages": [{"role": "user", "content": user}],
-        }, headers={"x-api-key": self.key, "anthropic-version": "2023-06-01"})
-        return "".join(b.get("text", "") for b in body.get("content", [])
-                       if b.get("type") == "text").strip()
-
-
-class OpenAIAdapter(AIAdapter):
-    """CLOUD AI plane via any OpenAI-compatible API — stdlib only. Covers OpenAI
-    (Codex/GPT), plus Groq, Together, OpenRouter, or a local OpenAI server, by
-    pointing the base URL wherever you like. Just needs OPENAI_API_KEY.
-
-    Env: OPENAI_API_KEY,
-         VELOGUARD_OPENAI_BASE_URL (default https://api.openai.com/v1),
-         VELOGUARD_OPENAI_MODEL (default gpt-4o-mini)
-    """
-
-    name = "openai"
-    _TOOL = {"type": "function", "function": {
-        "name": "emit_action",
-        "description": "Translate the security intent into one VeloGuard action.",
-        "parameters": {"type": "object", "properties": _PROPERTIES,
-                       "required": ["type", "rationale"]}}}
-
-    def __init__(self, key: str | None = None, model: str | None = None,
-                 base_url: str | None = None, **_) -> None:
-        self.key = key or os.environ.get("OPENAI_API_KEY")
-        if not self.key:
-            raise RuntimeError(
-                "no OpenAI API key — run:  guardd key openai <YOUR_KEY>  "
-                "(or export OPENAI_API_KEY)")
-        self.base = (base_url or os.environ.get(
-            "VELOGUARD_OPENAI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
-        self.model = model or os.environ.get("VELOGUARD_OPENAI_MODEL", "gpt-4o-mini")
-
-    def parse(self, intent: str) -> Action:
-        body = _post(f"{self.base}/chat/completions", {
-            "model": self.model, "temperature": 0,
-            "messages": [{"role": "system", "content": _SYSTEM},
-                         {"role": "user", "content": intent}],
-            "tools": [self._TOOL],
-            "tool_choice": {"type": "function", "function": {"name": "emit_action"}},
-        }, headers={"Authorization": f"Bearer {self.key}"})
-        try:
-            call = body["choices"][0]["message"]["tool_calls"][0]
-            data = json.loads(call["function"]["arguments"])
-        except (KeyError, IndexError, json.JSONDecodeError):
-            return Action(ActionType.NOOP, {}, rationale="model emitted no action")
-        return _build_action(data, intent)
-
-    def complete(self, system: str, user: str, max_tokens: int = 600) -> str:
-        body = _post(f"{self.base}/chat/completions", {
-            "model": self.model, "temperature": 0.2, "max_tokens": max_tokens,
-            "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": user}],
-        }, headers={"Authorization": f"Bearer {self.key}"})
-        return body["choices"][0]["message"]["content"].strip()
+        return self.brain.complete(system, user, max_tokens)
 
 
 _ADAPTERS = {
     "mock": MockAdapter,
-    "ollama": OllamaAdapter,
-    "claude": ClaudeAdapter,
-    "openai": OpenAIAdapter,
+    "snn": SNNAdapter,
 }
 
 
