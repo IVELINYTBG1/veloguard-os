@@ -1,0 +1,16 @@
+# VeloGuardOS — bind a driver to ANY wifi card at boot (modalias autoload,
+# missing-firmware flagging, on-demand offline broadcom-wl). Fast no-op when
+# everything is already claimed. Install:
+#   install -m644 veloguard-wifi-autodetect.service /etc/systemd/system/
+#   systemctl enable veloguard-wifi-autodetect.service
+[Unit]
+Description=VeloGuardOS Wi-Fi hardware auto-detection
+After=systemd-udevd.service
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/veloguard-wifi-autodetect
+
+[Install]
+WantedBy=multi-user.target

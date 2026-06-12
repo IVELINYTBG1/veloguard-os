@@ -19,7 +19,7 @@ f="$(zenity --file-selection --title='Pick a WireGuard config (.conf)' \
 p="$(zenity --list --radiolist --title='VeloGuard VPN' \
             --text='Which provider is this config from?' \
             --column='' --column='provider' \
-            TRUE proton FALSE mullvad FALSE surfshark FALSE other 2>/dev/null)" || exit 0
+            TRUE proton FALSE surfshark FALSE nord FALSE mullvad FALSE other 2>/dev/null)" || exit 0
 if [ "$p" = "other" ]; then
   p="$(zenity --entry --title='VeloGuard VPN' --text='Profile name:' \
               --entry-text='veloguard' 2>/dev/null)" || exit 0

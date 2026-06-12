@@ -38,6 +38,18 @@ sed -i 's/Arch Linux/VeloGuardOS/g' "$PROFILE"/efiboot/loader/entries/*.conf 2>/
 # 3. extra packages (appended to releng's base list)
 cat "$REPO/iso/packages.extra" >> "$PROFILE/packages.x86_64"
 
+# 3.5 local package repo: calamares (+ ckbcomp) — the GUI installer is not in
+#     Arch's official repos and Chaotic-AUR dropped it, so we build it from AUR
+#     once (container) and pin the package here. Hermetic: no AUR at ISO time.
+if ls "$REPO/iso/pkgs/"*.pkg.tar.zst >/dev/null 2>&1; then
+  printf '\n[veloguard]\nSigLevel = Optional TrustAll\nServer = file://%s\n' \
+    "$REPO/iso/pkgs" >> "$PROFILE/pacman.conf"
+  printf 'calamares\nckbcomp\n' >> "$PROFILE/packages.x86_64"
+  echo "  local repo: $(ls "$REPO/iso/pkgs/"*.pkg.tar.zst | xargs -n1 basename | tr '\n' ' ')"
+else
+  echo "  (no iso/pkgs packages — GUI installer will be MISSING from this image)"
+fi
+
 # 4. our tree into the live root
 mkdir -p "$PROFILE/airootfs/opt"
 cp -r "$REPO/veloguard"      "$PROFILE/airootfs/opt/veloguard"
@@ -68,7 +80,7 @@ find "$PROFILE/airootfs/opt/veloguard" -name __pycache__ -type d -exec rm -rf {}
 # 6. guard tools on PATH (the launcher cd's into /opt/veloguard)
 mkdir -p "$PROFILE/airootfs/usr/local/bin"
 for b in veloguard veloguard-install veloguard-vpn veloguard-vpn-ui \
-         veloguard-wifi-doctor veloguard-update \
+         veloguard-wifi-doctor veloguard-wifi-autodetect veloguard-update \
          veloguard-netwatch veloguard-bulgarian-mode veloguard-mcp; do
   ln -sf "/opt/veloguard/bin/$b" "$PROFILE/airootfs/usr/local/bin/$b"
 done
@@ -219,6 +231,22 @@ install -d "$PROFILE/airootfs/usr/share/pixmaps"
 install -d "$PROFILE/airootfs/etc/calamares/branding/veloguardos"
 "$IM" "$WALLSRC" -resize 320x \
   "$PROFILE/airootfs/etc/calamares/branding/veloguardos/veloguard-logo.png" || true
+
+# wifi-on-any-hardware: enable the boot-time autodetect service, and stock the
+# offline driver depot (broadcom-wl can't be preinstalled — its blacklists
+# would break b43/brcmfmac users — so autodetect installs it only when a
+# wl-only Broadcom chip is actually present).
+install -Dm644 "$REPO/veloguard/provision/veloguard-wifi-autodetect.service" \
+  "$PROFILE/airootfs/etc/systemd/system/veloguard-wifi-autodetect.service"
+ln -sf /etc/systemd/system/veloguard-wifi-autodetect.service \
+  "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/veloguard-wifi-autodetect.service"
+mkdir -p "$PROFILE/airootfs/opt/veloguard/drivers"
+if pacman -Sw --noconfirm --cachedir "$PROFILE/airootfs/opt/veloguard/drivers" broadcom-wl >/dev/null 2>&1; then
+  rm -f "$PROFILE/airootfs/opt/veloguard/drivers"/*.sig
+  echo "  driver depot: $(ls "$PROFILE/airootfs/opt/veloguard/drivers")"
+else
+  echo "  (broadcom-wl depot skipped — package unavailable)"
+fi
 
 # build stamp — lets veloguard-wifi-doctor (and humans) tell stale ISOs apart
 { date -u +'%Y-%m-%dT%H:%MZ'

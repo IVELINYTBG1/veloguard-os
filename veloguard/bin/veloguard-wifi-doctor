@@ -48,6 +48,16 @@ if [ "$found" = 0 ]; then
     ISSUES+=("no wlan device at all — the driver/firmware didn't bind (see the dmesg section of the report)")
 fi
 
+sec "unclaimed wifi-class hardware (any vendor)"
+if command -v veloguard-wifi-autodetect >/dev/null 2>&1; then
+    out="$(veloguard-wifi-autodetect --report 2>/dev/null)"
+    printf '%s\n' "$out" | tee -a "$R"
+    printf '%s' "$out" | grep -q UNCLAIMED \
+        && ISSUES+=("wifi hardware with no driver — run: sudo veloguard-wifi-autodetect")
+else
+    log "  (veloguard-wifi-autodetect not on PATH)"
+fi
+
 sec "USB Realtek power (autosuspend must be 'on' = never suspend)"
 for d in /sys/bus/usb/devices/*; do
     [ -f "$d/idVendor" ] || continue

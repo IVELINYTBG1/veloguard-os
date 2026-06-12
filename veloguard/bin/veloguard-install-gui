@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#
+# veloguard-install-gui — launch the graphical installer (Calamares), with an
+# honest fallback message if this image was built without it.
+if command -v calamares >/dev/null 2>&1; then
+    exec pkexec calamares
+fi
+msg="The graphical installer isn't in this image — use the terminal installer: sudo archinstall"
+notify-send "VeloGuardOS installer" "$msg" 2>/dev/null || echo "$msg" >&2
+exit 1
