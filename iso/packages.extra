@@ -38,6 +38,12 @@ ffmpeg
 exfatprogs
 ntfs-3g
 
+# installer must be able to make the ESP + install the bootloader on the target
+# (releng usually carries these; explicit so the GUI installer can't regress)
+grub
+efibootmgr
+dosfstools
+
 # guard runtime
 python
 
