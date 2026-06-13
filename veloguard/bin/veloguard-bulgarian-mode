@@ -71,8 +71,18 @@ start() {
   [ -n "$ASSETS" ] || { echo "Bulgarian_Mode assets not found (set VELOGUARD_BG_DIR)"; exit 1; }
   running && { say "already ON"; exit 0; }
   mkdir -p "$STATE"
-  if [ -n "$DRY" ]; then echo "''" > "$SAVED"
-  else gsettings get org.gnome.desktop.background picture-uri > "$SAVED" 2>/dev/null || echo "''" > "$SAVED"; fi
+  # Save ALL three keys the slideshow touches. THE bug: the loop also sets
+  # picture-uri-dark, and the desktop ships in Dark Style — so restoring only
+  # picture-uri left the *dark* wallpaper stuck on the last Bulgarian image.
+  : > "$SAVED"
+  if [ -n "$DRY" ]; then
+    printf 'picture-uri\t%s\n' "'file:///DRY-original.png'" >> "$SAVED"
+  else
+    for k in picture-uri picture-uri-dark picture-options; do
+      printf '%s\t%s\n' "$k" \
+        "$(gsettings get org.gnome.desktop.background "$k" 2>/dev/null)" >> "$SAVED"
+    done
+  fi
   setsid "$0" __wall  >/dev/null 2>&1 < /dev/null & echo $! > "$STATE/wall.pid"
   setsid "$0" __music >/dev/null 2>&1 < /dev/null & echo $! > "$STATE/music.pid"
   say "Bulgarian Mode ON — folk slideshow + shuffled music. Честито! 🎉"
@@ -88,9 +98,13 @@ stop() {
   done
   pkill -f "$0 __music" 2>/dev/null || true
   if [ -f "$SAVED" ]; then
-    val="$(cat "$SAVED")"
-    if [ -n "$DRY" ]; then echo "[dry] restore wallpaper → $val"
-    else gsettings set org.gnome.desktop.background picture-uri "$val" 2>/dev/null || true; fi
+    if [ -n "$DRY" ]; then echo "[dry] restore wallpaper keys:"; sed 's/^/[dry]   /' "$SAVED"
+    else
+      while IFS="$(printf '\t')" read -r k v; do
+        [ -n "$k" ] && [ -n "$v" ] || continue
+        gsettings set org.gnome.desktop.background "$k" "$v" 2>/dev/null || true
+      done < "$SAVED"
+    fi
     rm -f "$SAVED"
   fi
   say "Bulgarian Mode OFF — wallpaper restored."
