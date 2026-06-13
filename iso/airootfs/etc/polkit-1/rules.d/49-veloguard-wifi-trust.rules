@@ -1,0 +1,14 @@
+// Let active local admin (wheel) users set the current Wi-Fi's trust without a
+// password — same trust model as the VPN/offline-update helpers, one fixed
+// program, matched by both the PATH symlink and the /opt realpath (pkexec
+// canonicalizes before polkit sees it).
+polkit.addRule(function (action, subject) {
+    if (action.id === "org.freedesktop.policykit.exec") {
+        var p = action.lookup("program");
+        if ((p === "/usr/local/bin/veloguard-wifi-trust" ||
+             p === "/opt/veloguard/bin/veloguard-wifi-trust") &&
+            subject.active && subject.local && subject.isInGroup("wheel")) {
+            return polkit.Result.YES;
+        }
+    }
+});

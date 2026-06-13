@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import memory, netclass, state, tools as toolmod, updater
+from . import authchan, memory, netclass, state, tools as toolmod, updater
 from .actions import Action, ActionType
 from .audit import record
 from .executor import NftExecutor
@@ -103,7 +103,10 @@ def execute_tool(name: str, args: dict, *, apply: bool = False,
                     "reason": "destructive — needs autonomy=full or an interactive yes"}
 
     try:
-        out = _run_on_executor(action, NftExecutor(apply=apply))
+        # Seal the policy-approved action: the executor will refuse it if the
+        # HMAC doesn't match, so an injected/forged action can't reach the kernel.
+        ex = NftExecutor(apply=apply, seal=authchan.seal(action), action=action)
+        out = _run_on_executor(action, ex)
     except RuntimeError as e:
         # Executor failed or self-protected (e.g. vpn_up refused/rolled back a
         # black-holing tunnel). Audit the failure too — the guard logs every

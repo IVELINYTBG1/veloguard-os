@@ -30,7 +30,24 @@ def _resolve_ip(model_ip: str | None, intent: str) -> str | None:
     return model_ip or text_ip
 
 
+def sanitize_text(text, limit: int = 4000) -> str:
+    """Belt against prompt-injection / log-injection via untrusted text (SSIDs,
+    filenames, log lines, AI rationale): cap length and strip NUL + control bytes
+    (terminal-escape tricks) while keeping tab/newline. The real defense is
+    structural — the AI can only emit a typed Action, every one gated by policy
+    and sealed before it reaches the kernel — but untrusted bytes shouldn't ride
+    into the audit log or the model unfiltered."""
+    if not isinstance(text, str):
+        text = str(text or "")
+    text = text[:limit]
+    return "".join(c for c in text if c in "\t\n" or ord(c) >= 0x20)
+
+
+sanitize_intent = sanitize_text   # alias for readability at call sites
+
+
 def _build_action(data: dict, intent: str) -> Action:
+    intent = sanitize_intent(intent)
     try:
         atype = ActionType(data.get("type"))
     except ValueError:
@@ -42,7 +59,9 @@ def _build_action(data: dict, intent: str) -> Action:
             params["ip"] = ip
     elif data.get("target"):
         params["target"] = data["target"]
-    return Action(atype, params, rationale=data.get("rationale", ""))
+    # rationale is free AI text that lands in the audit log — never executed,
+    # but sanitize so it can't carry terminal escapes into logs.
+    return Action(atype, params, rationale=sanitize_text(data.get("rationale", "")))
 
 
 def _heuristic_report(text: str) -> str:
@@ -89,7 +108,7 @@ class MockAdapter(AIAdapter):
     name = "mock"
 
     def parse(self, intent: str) -> Action:
-        text = intent.lower().strip()
+        text = sanitize_intent(intent).lower().strip()
         ip = _resolve_ip(None, intent)
         pm = re.search(r"\bpid\s*(\d+)", text) or re.search(r"\b(\d{2,})\b", text)
         target = pm.group(1) if pm else None
