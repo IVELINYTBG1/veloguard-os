@@ -29,6 +29,9 @@ const PROVIDERS = [
     ['Surfshark', 'surfshark'],
     ['NordVPN', 'nord'],
 ];
+// Trust toggle: world-readable mirror the privileged helper maintains.
+const TRUSTED_LIST = '/var/lib/veloguard/trusted-ssids';
+const WIFI_TRUST = '/usr/local/bin/veloguard-wifi-trust';
 
 function sh(cmd) {
     try {
@@ -151,11 +154,75 @@ class VpnToggle extends QuickMenuToggle {
     }
 });
 
+// "Trust this Wi-Fi": checked = network is in the guard's trusted list. Turning
+// it OFF marks the current SSID untrusted and the helper brings the VPN up (no
+// prompt) if a config is available — exactly the requested behavior.
+const TrustToggle = GObject.registerClass(
+class TrustToggle extends QuickToggle {
+    _init() {
+        super._init({title: 'Trust Wi-Fi', iconName: 'network-wireless-symbolic',
+                     toggleMode: true});
+        this._ssid = null;
+        this.connect('clicked', () => {
+            if (!this._ssid) { this.checked = false; return; }   // not on Wi-Fi
+            const action = this.checked ? 'trust' : 'untrust';
+            sh(`r=$(pkexec ${WIFI_TRUST} ${action}); case "$r" in ` +
+               `trusted) notify-send "VeloGuard" "Wi-Fi trusted — no auto-VPN";; ` +
+               `untrusted) notify-send "VeloGuard" "Wi-Fi untrusted — VPN connecting";; ` +
+               `untrusted-no-vpn) notify-send "VeloGuard" "Wi-Fi untrusted — import a VPN config to auto-protect";; ` +
+               `esac`);
+            this._syncSoon();
+        });
+        this._timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
+            this._sync();
+            return GLib.SOURCE_CONTINUE;
+        });
+        this.connect('destroy', () => {
+            if (this._timer) GLib.source_remove(this._timer);
+            this._timer = 0;
+        });
+        this._sync();
+    }
+
+    _syncSoon() {
+        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 3, () => {
+            try { this._sync(); } catch (_e) {}
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _sync() {
+        try {
+            const proc = Gio.Subprocess.new(
+                ['nmcli', '-t', '-f', 'active,ssid', 'dev', 'wifi'],
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE);
+            proc.communicate_utf8_async(null, null, (p, res) => {
+                try {
+                    const [, out] = p.communicate_utf8_finish(res);
+                    let ssid = null;
+                    for (const l of (out ?? '').split('\n'))
+                        if (l.startsWith('yes:')) { ssid = l.slice(4); break; }
+                    this._ssid = ssid;
+                    if (!ssid) { this.subtitle = 'not on Wi-Fi'; this.checked = false; return; }
+                    this.subtitle = ssid;
+                    let trusted = false;
+                    try {
+                        const [ok, bytes] = GLib.file_get_contents(TRUSTED_LIST);
+                        if (ok) trusted = new TextDecoder().decode(bytes)
+                            .split('\n').includes(ssid);
+                    } catch (_e) {}
+                    this.checked = trusted;
+                } catch (_e) {}
+            });
+        } catch (_e) {}
+    }
+});
+
 const Indicator = GObject.registerClass(
 class Indicator extends SystemIndicator {
     _init() {
         super._init();
-        this._items = [new VpnToggle(), new BgToggle()];
+        this._items = [new VpnToggle(), new TrustToggle(), new BgToggle()];
         this._items.forEach(i => this.quickSettingsItems.push(i));
     }
 });

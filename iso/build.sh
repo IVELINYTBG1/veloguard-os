@@ -80,8 +80,8 @@ find "$PROFILE/airootfs/opt/veloguard" -name __pycache__ -type d -exec rm -rf {}
 # 6. guard tools on PATH (the launcher cd's into /opt/veloguard)
 mkdir -p "$PROFILE/airootfs/usr/local/bin"
 for b in veloguard veloguard-install veloguard-vpn veloguard-vpn-ui \
-         veloguard-wifi-doctor veloguard-wifi-autodetect veloguard-update \
-         veloguard-netwatch veloguard-bulgarian-mode veloguard-mcp; do
+         veloguard-wifi-doctor veloguard-wifi-autodetect veloguard-wifi-trust \
+         veloguard-update veloguard-netwatch veloguard-bulgarian-mode veloguard-mcp; do
   ln -sf "/opt/veloguard/bin/$b" "$PROFILE/airootfs/usr/local/bin/$b"
 done
 install -Dm644 "$REPO/veloguard/ui/bulgarian-mode.desktop" \
@@ -106,6 +106,12 @@ mkdir -p "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants" \
          "$PROFILE/airootfs/etc/systemd/system/timers.target.wants"
 ln -sf /usr/lib/systemd/system/NetworkManager.service \
   "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+# Explicitly enable wpa_supplicant. NM is meant to D-Bus-activate it, but on the
+# live ISO that activation wasn't firing — so NM got no WPA/RSN scan flags and
+# every secured network showed as "open" (connects with no password prompt,
+# then no traffic). Enabling the service guarantees the backend is up.
+ln -sf /usr/lib/systemd/system/wpa_supplicant.service \
+  "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/wpa_supplicant.service"
 ln -sf /usr/lib/systemd/system/gdm.service \
   "$PROFILE/airootfs/etc/systemd/system/display-manager.service"
 # Wi-Fi: make NetworkManager the SOLE manager. archiso's base enables

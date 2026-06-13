@@ -21,15 +21,33 @@ WG_DIR = "/etc/wireguard"                      # where wg-quick reads <profile>.
 
 
 class NftExecutor:
-    def __init__(self, apply: bool = False):
+    def __init__(self, apply: bool = False, *, seal: str | None = None,
+                 action=None):
         self.apply = apply
         self._planned: list[list[str]] = []
+        # AI/agent/MCP actions arrive SEALED (dispatch sets seal+action). The
+        # local-root CLI calls construct us plainly (seal is None) and run as
+        # before — that path is the operator, not the AI.
+        self._seal = seal
+        self._action = action
+
+    def _check_seal(self) -> None:
+        """On a sealed channel, refuse any real kernel op whose action doesn't
+        carry the guard's per-boot HMAC — i.e. that didn't pass the policy gate.
+        Defeats a prompt-injected/compromised AI forging a kernel command."""
+        if self._seal is None:
+            return
+        from . import authchan
+        if not authchan.verify(self._action, self._seal):
+            raise RuntimeError("guard seal invalid — refusing kernel op "
+                               "(only policy-approved actions may touch the kernel)")
 
     def _run(self, args: list[str]) -> str:
         cmd = ["nft", *args]
         if not self.apply:
             self._planned.append(cmd)
             return f"[dry-run] {' '.join(cmd)}"
+        self._check_seal()
         if shutil.which("nft") is None:
             raise RuntimeError("nft not found — install nftables")
         proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -65,6 +83,7 @@ class NftExecutor:
         if not self.apply:
             self._planned.append(argv)
             return f"[dry-run] {' '.join(argv)}"
+        self._check_seal()
         if shutil.which(argv[0]) is None:
             raise RuntimeError(f"{argv[0]} not found")
         proc = subprocess.run(argv, capture_output=True, text=True)

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# veloguard-wifi-trust — mark the CURRENT Wi-Fi network trusted/untrusted in the
+# guard's trust store, and auto-bring-the-VPN-up on untrusted (if a config is
+# available). Runs privileged (pkexec; polkit rule 49-veloguard-wifi-trust) so
+# it shares the SYSTEM trust store with the netwatch auto-protect dispatcher.
+#
+# It also keeps a world-readable /var/lib/veloguard/trusted-ssids so the GNOME
+# quick-settings toggle can read the current state without a privileged call.
+#
+#   veloguard-wifi-trust trust      # current SSID → trusted (no auto-VPN)
+#   veloguard-wifi-trust untrust    # current SSID → untrusted → VPN up if available
+#   (read state from the trusted-ssids file directly; this tool only WRITES)
+#
+# Exit/stdout for the UI: prints  trusted | untrusted | untrusted-no-vpn | no-wifi
+set -uo pipefail
+export VELOGUARD_STATE=/var/lib/veloguard
+HOME_DIR="${VELOGUARD_HOME:-/opt/veloguard}"
+LIST="$VELOGUARD_STATE/trusted-ssids"
+VPN=/usr/local/bin/veloguard-vpn      # absolute: pkexec's PATH omits /usr/local/bin
+mkdir -p "$VELOGUARD_STATE" 2>/dev/null || true
+
+# current active Wi-Fi (same parse the netwatch dispatcher uses)
+line="$(nmcli -t -f ACTIVE,SSID,SECURITY dev wifi 2>/dev/null | awk -F: '$1=="yes"{print; exit}')"
+ssid="$(printf '%s' "$line" | cut -d: -f2)"
+sec="$(printf '%s'  "$line" | cut -d: -f3)"
+[ -n "$ssid" ] || { echo "no-wifi"; exit 0; }
+
+# write to the guard's trust DB (netclass/netwatch read this). SSID via env →
+# never interpolated into code (it's attacker-controlled).
+set_db() {
+  ( cd "$HOME_DIR" 2>/dev/null && \
+    VG_SSID="$ssid" VG_SEC="$sec" VG_V="$1" python3 - <<'PY' >/dev/null 2>&1 || true
+import os
+from guardd import memory
+memory.set_network_trust(os.environ['VG_SSID'], None,
+                         os.environ.get('VG_SEC') or None, os.environ['VG_V'])
+PY
+  )
+}
+
+# maintain the world-readable mirror the GUI reads
+list_del() { [ -f "$LIST" ] && grep -vxF "$ssid" "$LIST" > "$LIST.tmp" 2>/dev/null && mv "$LIST.tmp" "$LIST" || true; }
+list_add() { list_del; printf '%s\n' "$ssid" >> "$LIST"; }
+
+case "${1:-status}" in
+  trust)
+    set_db trusted; list_add; chmod 644 "$LIST" 2>/dev/null || true
+    echo "trusted" ;;
+  untrust)
+    set_db untrusted; list_del; touch "$LIST"; chmod 644 "$LIST" 2>/dev/null || true
+    # auto-protect: VPN up if a default profile is configured (rc 2 = none)
+    if "$VPN" connect veloguard >/dev/null 2>&1; then echo "untrusted"
+    else [ "$?" = 2 ] && echo "untrusted-no-vpn" || echo "untrusted"; fi ;;
+  *)
+    echo "usage: veloguard-wifi-trust trust|untrust" >&2; exit 1 ;;
+esac
