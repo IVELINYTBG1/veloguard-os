@@ -112,7 +112,7 @@ never mentioned or lock you out of your own LAN.
 
 ---
 
-# Desktop — Wayland + PipeWire + GNOME
+# Desktop — Wayland + PipeWire + Hyprland (Omarchy-derived)
 
 Two halves, because the desktop is userspace but the kernel must support it.
 
@@ -135,13 +135,17 @@ built in so VeloGuardOS always reaches a graphical session (bare metal *or* VM).
 ## 2. Userspace side — `install-desktop.sh`
 
 ```bash
-sudo ./install-desktop.sh        # detects Arch / Fedora / Debian base
+sudo ./install-desktop.sh        # Arch (reference); other distros: install the
+                                 # Hyprland stack, then re-run to deploy config
 ```
 
-Minimal on purpose ("like Arch"): GNOME **Shell** + GDM, PipeWire +
-WirePlumber, the GNOME portal — not the full GNOME suite. Add what you want;
-that's the "fully mutable" promise. It enables GDM, turns on PipeWire as a
-per-user service, and makes sure GDM is serving **Wayland**.
+An **Omarchy-derived Hyprland** desktop (see [`../../desktop/`](../../desktop/)):
+Hyprland + Waybar + mako + wofi + SDDM, PipeWire + WirePlumber, the Hyprland
+portal — curated, "like Arch", not a full DE. The script installs the package
+set from `desktop/packages.desktop`, deploys the config layer to
+`/usr/share/veloguard` + `/etc/skel`, installs the guard↔desktop helpers to
+`/usr/local/bin`, enables **SDDM**, and turns on PipeWire per user. The guard is
+wired into the bar (a Waybar 🛡 module) and a `Super+Shift+G` menu.
 
 ## Why this stack suits a *security* OS
 

@@ -1,0 +1,24 @@
+# VeloGuard theme — alacritty colors
+[colors.primary]
+background = "#13203a"
+foreground = "#e6edf7"
+
+[colors.normal]
+black   = "#0d1729"
+red     = "#ff5555"
+green   = "#00ff99"
+yellow  = "#ffcc33"
+blue    = "#33ccff"
+magenta = "#bd93f9"
+cyan    = "#8be9fd"
+white   = "#e6edf7"
+
+[colors.bright]
+black   = "#4a5568"
+red     = "#ff6e6e"
+green   = "#69ffc4"
+yellow  = "#ffd966"
+blue    = "#66d9ff"
+magenta = "#d6acff"
+cyan    = "#a4ffff"
+white   = "#ffffff"

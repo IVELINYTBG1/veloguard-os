@@ -1,19 +1,28 @@
-"""The AI plane — local-only, exactly as the architecture demands.
+"""The AI plane — pluggable, exactly as the architecture demands.
 
 Every adapter turns a human *intent* into a structured `Action`. The rest of
-VeloGuard neither knows nor cares where that came from. The cloud-API adapters
-(Claude/OpenAI) and the Ollama HTTP client are GONE by design: VeloGuardOS's
-brain is a local spiking neural network (guardd/snn.py) running in-process —
-no API, no key, no HTTP, nothing leaves the box.
+VeloGuard neither knows nor cares where that came from — and no matter the
+brain, the action is still typed, IP-sanitized, policy-gated, consent-gated and
+audited before it can reach the kernel. That structural guard is why a weak (or
+remote) brain can be *wrong* but never *dangerous*.
 
-Two planes:
-  * snn   — the real brain (model code lands in guardd/snn.py; pending)
-  * mock  — deterministic keyword parser; offline fallback that always works
+Planes:
+  * mock   — deterministic keyword parser; offline fallback that always works
+  * snn    — VeloGuard's in-process spiking neural net (model code: guardd/snn.py)
+  * claude — Anthropic Messages API (needs a key; nothing but the intent leaves)
+  * ollama — a LOCAL model served by Ollama (private, free; no key, no cloud)
+
+claude/ollama are OPT-IN: they only activate when the user selects them
+(`guardd use claude|ollama`, or the setup wizard). The stdlib is the only
+dependency — the adapters speak HTTP with urllib, so nothing new is vendored.
 """
 
 from __future__ import annotations
 
+import json
 import re
+import urllib.error
+import urllib.request
 
 from .actions import Action, ActionType
 
@@ -183,9 +192,126 @@ class SNNAdapter(AIAdapter):
         return self.brain.complete(system, user, max_tokens)
 
 
+# --- pluggable reasoning brains (opt-in): Claude (API) and Ollama (local) -----
+
+# Intent → single typed action, as strict JSON. The IP rule is belt-and-braces:
+# _build_action/_resolve_ip discard any address the user didn't actually type.
+_PARSE_SYSTEM = (
+    "You map ONE security intent to ONE VeloGuard action. Reply with ONLY a JSON "
+    "object and no prose: {\"type\": <one of block_ip, unblock_ip, list_blocked, "
+    "vpn_up, vpn_down, quarantine, release_quarantine, kill_quarantine, "
+    "sandbox_run, noop>, \"ip\": <IPv4 string or null>, \"target\": <string or "
+    "null>, \"rationale\": <short reason>}. Only ever use an IP that appears "
+    "verbatim in the intent; never invent one."
+)
+
+
+def _extract_json(text: str) -> dict:
+    """Pull the first {...} object out of a model reply (tolerating code fences
+    and surrounding prose). Falls back to NOOP so a chatty model is never fatal."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+        i = t.find("{")
+        if i != -1:
+            t = t[i:]
+    try:
+        s = t.index("{")
+        e = t.rindex("}") + 1
+        obj = json.loads(t[s:e])
+        return obj if isinstance(obj, dict) else {"type": "noop"}
+    except (ValueError, json.JSONDecodeError):
+        return {"type": "noop", "rationale": "model did not return valid JSON"}
+
+
+class ClaudeAdapter(AIAdapter):
+    """Anthropic Messages API. Only the intent/prompt leaves the box; the key is
+    read from state (chmod 600) or the environment and never logged."""
+
+    name = "claude"
+    API = "https://api.anthropic.com/v1/messages"
+    API_VERSION = "2023-06-01"
+
+    def __init__(self, model: str | None = None, api_key: str | None = None, **_) -> None:
+        self.model = model or "claude-sonnet-5"
+        self.api_key = api_key
+
+    def _post(self, system: str, user: str, max_tokens: int) -> str:
+        if not self.api_key:
+            raise RuntimeError(
+                "no Claude API key — run `guardd setup` or set ANTHROPIC_API_KEY")
+        body = json.dumps({
+            "model": self.model, "max_tokens": max_tokens, "system": system,
+            "messages": [{"role": "user", "content": user}],
+        }).encode()
+        req = urllib.request.Request(self.API, data=body, headers={
+            "content-type": "application/json",
+            "x-api-key": self.api_key,
+            "anthropic-version": self.API_VERSION,
+        })
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"Claude API error {e.code}") from None
+        except OSError as e:
+            raise RuntimeError(f"Claude API unreachable ({e})") from None
+        parts = [b.get("text", "") for b in data.get("content", [])
+                 if b.get("type") == "text"]
+        return "".join(parts).strip()
+
+    def parse(self, intent: str) -> Action:
+        text = self._post(_PARSE_SYSTEM, sanitize_intent(intent), 300)
+        return _build_action(_extract_json(text), intent)
+
+    def complete(self, system: str, user: str, max_tokens: int = 600) -> str:
+        return self._post(system, sanitize_text(user, 8000), max_tokens)
+
+
+class OllamaAdapter(AIAdapter):
+    """A LOCAL model served by Ollama — private, free, offline. No key, and
+    nothing leaves the machine (talks to 127.0.0.1:11434 by default)."""
+
+    name = "ollama"
+
+    def __init__(self, model: str | None = None, host: str | None = None, **_) -> None:
+        self.model = model or "llama3.1"
+        self.host = (host or "http://127.0.0.1:11434").rstrip("/")
+
+    def _post(self, system: str, user: str, max_tokens: int, fmt_json: bool = False) -> str:
+        payload = {
+            "model": self.model, "stream": False,
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": user}],
+            "options": {"num_predict": max_tokens},
+        }
+        if fmt_json:
+            payload["format"] = "json"
+        req = urllib.request.Request(
+            self.host + "/api/chat", data=json.dumps(payload).encode(),
+            headers={"content-type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                data = json.loads(r.read())
+        except OSError as e:
+            raise RuntimeError(
+                f"Ollama unreachable at {self.host} ({e}) — is `ollama serve` "
+                "running and the model pulled?") from None
+        return (data.get("message", {}) or {}).get("content", "").strip()
+
+    def parse(self, intent: str) -> Action:
+        text = self._post(_PARSE_SYSTEM, sanitize_intent(intent), 300, fmt_json=True)
+        return _build_action(_extract_json(text), intent)
+
+    def complete(self, system: str, user: str, max_tokens: int = 600) -> str:
+        return self._post(system, sanitize_text(user, 8000), max_tokens)
+
+
 _ADAPTERS = {
     "mock": MockAdapter,
     "snn": SNNAdapter,
+    "claude": ClaudeAdapter,
+    "ollama": OllamaAdapter,
 }
 
 

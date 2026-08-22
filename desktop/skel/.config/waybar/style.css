@@ -1,0 +1,93 @@
+/* VeloGuardOS Waybar style — derived from Omarchy config/waybar/style.css (MIT).
+   Theme colors are imported from the active VeloGuard theme. Guard-status
+   classes are added. See desktop/omarchy/PROVENANCE.md. */
+@import "../veloguard/current/waybar.css";
+
+* {
+  background-color: @background;
+  color: @foreground;
+
+  border: none;
+  border-radius: 0;
+  min-height: 0;
+  font-family: 'JetBrainsMono Nerd Font';
+  font-size: 12px;
+}
+
+.modules-left {
+  margin-left: 8px;
+}
+
+.modules-right {
+  margin-right: 8px;
+}
+
+#workspaces button {
+  all: initial;
+  padding: 0 6px;
+  margin: 0 1.5px;
+  min-width: 9px;
+}
+
+#workspaces button.empty {
+  opacity: 0.5;
+}
+
+#cpu,
+#battery,
+#pulseaudio,
+#custom-veloguard,
+#custom-guard {
+  min-width: 12px;
+  margin: 0 7.5px;
+}
+
+#custom-veloguard {
+  font-size: 14px;
+}
+
+#tray {
+  margin-right: 16px;
+}
+
+#bluetooth {
+  margin-right: 17px;
+}
+
+#network {
+  margin-right: 13px;
+}
+
+#custom-expand-icon {
+  margin-right: 18px;
+}
+
+tooltip {
+  padding: 2px;
+}
+
+#clock {
+  margin-left: 8.75px;
+}
+
+.hidden {
+  opacity: 0;
+}
+
+/* ── Guard status colors ─────────────────────────────────────────────────
+   green  = VPN up / guard healthy
+   amber  = untrusted Wi-Fi with no VPN, or an update is staged
+   red    = guard down / alert */
+#custom-guard.vpn-up {
+  color: #00ff99;
+}
+
+#custom-guard.untrusted,
+#custom-guard.update {
+  color: #ffcc33;
+}
+
+#custom-guard.alert,
+#custom-guard.down {
+  color: #ff5555;
+}

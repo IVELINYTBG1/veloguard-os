@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#
+# veloguard-powermenu — Hyprland power menu (wofi). Ports the GNOME end-session
+# dialog, including the "Update VeloGuardOS on restart" option, which arms the
+# staged offline kernel update via the SAME privileged helper the GNOME
+# extension used (veloguard-arm-offline-update, guarded by its polkit rule).
+set -euo pipefail
+
+PENDING="${VELOGUARD_PENDING:-/var/lib/veloguard/staged-kernel/pending.json}"
+ARM="${VELOGUARD_ARM:-veloguard-arm-offline-update}"
+
+menu() { wofi --dmenu --width 340 --height 300 -p "$1"; }
+
+# Build the entry list; add "Reboot & Update" only when an update is staged.
+entries=$'Lock\nSuspend\nLog out\nReboot\nShut down'
+staged_version=""
+if [ -r "$PENDING" ]; then
+  staged_version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PENDING" 2>/dev/null | head -n1)"
+  entries="Reboot & Update (kernel ${staged_version:-pending})"$'\n'"$entries"
+fi
+
+choice="$(printf '%s\n' "$entries" | menu "⏻ Power")" || exit 0
+
+case "$choice" in
+  Lock)      loginctl lock-session ;;
+  Suspend)   systemctl suspend ;;
+  "Log out") uwsm stop 2>/dev/null || hyprctl dispatch exit ;;
+  Reboot)    systemctl reboot ;;
+  "Shut down") systemctl poweroff ;;
+  "Reboot & Update"*)
+    if pkexec "$ARM"; then
+      notify-send "VeloGuard" "Update armed — rebooting to apply the staged kernel"
+      systemctl reboot
+    else
+      notify-send "VeloGuard" "Could not arm the update (see: veloguard-update status)"
+    fi
+    ;;
+esac

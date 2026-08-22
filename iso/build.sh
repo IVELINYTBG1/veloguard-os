@@ -13,9 +13,6 @@ PROFILE="${PROFILE:-/tmp/vgos-profile}"
 WORK="${WORK:-$REPO/work}"
 OUT="${OUT:-$REPO/out}"
 
-# dconf is needed to compile the default-wallpaper database (step 7.5)
-command -v dconf >/dev/null || pacman -S --noconfirm --needed dconf
-
 # 1. start from the official profile (correct syslinux/ + efiboot/ configs)
 rm -rf "$PROFILE"
 cp -r /usr/share/archiso/configs/releng "$PROFILE"
@@ -37,6 +34,10 @@ sed -i 's/Arch Linux/VeloGuardOS/g' "$PROFILE"/efiboot/loader/entries/*.conf 2>/
 
 # 3. extra packages (appended to releng's base list)
 cat "$REPO/iso/packages.extra" >> "$PROFILE/packages.x86_64"
+
+# 3a. the Omarchy-style Hyprland desktop stack (single source of truth). Strip
+#     comments/blank lines so only package names land in the archiso list.
+grep -vE '^\s*(#|$)' "$REPO/desktop/packages.desktop" >> "$PROFILE/packages.x86_64"
 
 # 3.5 local package repo: calamares (+ ckbcomp) — the GUI installer is not in
 #     Arch's official repos and Chaotic-AUR dropped it, so we build it from AUR
@@ -60,6 +61,28 @@ find "$PROFILE/airootfs/opt/veloguard" -name __pycache__ -type d -exec rm -rf {}
 # 5. our static overlay (desktop launchers, etc.)
 [ -d "$REPO/iso/airootfs" ] && cp -r "$REPO/iso/airootfs/." "$PROFILE/airootfs/"
 
+# 5a. the Omarchy-derived Hyprland desktop layer (see desktop/README.md):
+#     - shipped defaults  -> /usr/share/veloguard/desktop
+#     - themes            -> /usr/share/veloguard/themes
+#     - per-user skel     -> /etc/skel/.config  (seeded into every account)
+#     - helper scripts    -> /usr/local/bin     (guard <-> desktop integration)
+mkdir -p "$PROFILE/airootfs/usr/share/veloguard" \
+         "$PROFILE/airootfs/etc/skel/.config" \
+         "$PROFILE/airootfs/usr/local/bin"
+cp -r "$REPO/desktop/defaults" "$PROFILE/airootfs/usr/share/veloguard/desktop"
+cp -r "$REPO/desktop/themes"   "$PROFILE/airootfs/usr/share/veloguard/themes"
+cp -r "$REPO/desktop/hardware" "$PROFILE/airootfs/usr/share/veloguard/hardware"
+cp -r "$REPO/desktop/agents"   "$PROFILE/airootfs/usr/share/veloguard/agents"
+cp -r "$REPO/desktop/skel/.config/." "$PROFILE/airootfs/etc/skel/.config/"
+for b in "$REPO/desktop/bin/"*; do
+  install -Dm755 "$b" "$PROFILE/airootfs/usr/local/bin/$(basename "$b")"
+done
+# Seed the active-theme symlink so Waybar/mako/hyprland resolve a theme on the
+# very first login (useradd copies /etc/skel, symlinks included).
+mkdir -p "$PROFILE/airootfs/etc/skel/.config/veloguard"
+ln -sfn /usr/share/veloguard/themes/veloguard \
+  "$PROFILE/airootfs/etc/skel/.config/veloguard/current"
+
 # 4b/5b. KEEP SCRIPTS EXECUTABLE: mkarchiso copies airootfs with
 # --no-preserve=mode and restores ONLY the paths listed in profiledef.sh's
 # file_permissions — anything else lands 0644. Without these entries every
@@ -69,7 +92,8 @@ find "$PROFILE/airootfs/opt/veloguard" -name __pycache__ -type d -exec rm -rf {}
   printf 'file_permissions+=(\n'
   for p in "$PROFILE/airootfs/opt/veloguard/bin/"* \
            "$PROFILE/airootfs/opt/veloguard/provision/"* \
-           "$PROFILE/airootfs/opt/veloguard/"*.sh; do
+           "$PROFILE/airootfs/opt/veloguard/"*.sh \
+           "$PROFILE/airootfs/usr/local/bin/"veloguard-*; do
     [ -f "$p" ] || continue
     case "$p" in *.service|*.timer|*.md) continue ;; esac
     printf '  ["%s"]="0:0:755"\n' "${p#"$PROFILE/airootfs"}"
@@ -101,7 +125,7 @@ mkdir -p "$PROFILE/airootfs/etc/systemd/system/system-update.target.wants"
 ln -sf /etc/systemd/system/veloguard-offline-update.service \
   "$PROFILE/airootfs/etc/systemd/system/system-update.target.wants/veloguard-offline-update.service"
 
-# 7. enable services: NetworkManager + GDM, and BAKE IN the updater timer
+# 7. enable services: NetworkManager + SDDM, and BAKE IN the updater timer
 mkdir -p "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants" \
          "$PROFILE/airootfs/etc/systemd/system/timers.target.wants"
 ln -sf /usr/lib/systemd/system/NetworkManager.service \
@@ -112,7 +136,7 @@ ln -sf /usr/lib/systemd/system/NetworkManager.service \
 # then no traffic). Enabling the service guarantees the backend is up.
 ln -sf /usr/lib/systemd/system/wpa_supplicant.service \
   "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/wpa_supplicant.service"
-ln -sf /usr/lib/systemd/system/gdm.service \
+ln -sf /usr/lib/systemd/system/sddm.service \
   "$PROFILE/airootfs/etc/systemd/system/display-manager.service"
 # Wi-Fi: make NetworkManager the SOLE manager. archiso's base enables
 # systemd-networkd + iwd; running them alongside NM leaves Wi-Fi 'unmanaged'/
@@ -146,13 +170,19 @@ install -Dm644 "$REPO/veloguard/provision/veloguard-privacy.timer" \
   "$PROFILE/airootfs/etc/systemd/system/veloguard-privacy.timer"
 ln -sf /etc/systemd/system/veloguard-privacy.timer \
   "$PROFILE/airootfs/etc/systemd/system/timers.target.wants/veloguard-privacy.timer"
+# Hardware/driver setup (Omarchy-derived) — runs ONCE on first boot to install
+# the drivers this machine actually needs (GPU/Wi-Fi/touchpad/…).
+install -Dm644 "$REPO/veloguard/provision/veloguard-hardware.service" \
+  "$PROFILE/airootfs/etc/systemd/system/veloguard-hardware.service"
+ln -sf /etc/systemd/system/veloguard-hardware.service \
+  "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/veloguard-hardware.service"
 
 # 7.4 identity: override Arch's os-release at boot (filesystem pkg ships its own,
 #     so an overlay file would be clobbered — do it as a boot-time service).
 cat > "$PROFILE/airootfs/etc/systemd/system/veloguard-branding.service" <<'UNIT'
 [Unit]
 Description=VeloGuardOS identity branding
-Before=gdm.service display-manager.service
+Before=sddm.service display-manager.service
 ConditionPathExists=!/var/lib/veloguard/.branded
 [Service]
 Type=oneshot
@@ -164,43 +194,31 @@ UNIT
 ln -sf /etc/systemd/system/veloguard-branding.service \
   "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/veloguard-branding.service"
 
-# 7.5 default wallpaper — system-wide via a dconf database, so every user
-#     (including the live session) gets the VeloGuardOS wallpaper out of the box.
-#     The PNG is already in airootfs from the overlay (step 5):
+# 7.5 desktop wallpaper is now handled by the Hyprland session (swaybg, launched
+#     from /usr/share/veloguard/desktop/hypr/autostart.conf) pointing at the
+#     active theme's background, which falls back to the PNG already in airootfs:
 #       /usr/share/backgrounds/veloguard/default.png
-WP="file:///usr/share/backgrounds/veloguard/default.png"
-mkdir -p "$PROFILE/airootfs/etc/dconf/db/local.d" "$PROFILE/airootfs/etc/dconf/profile"
-printf 'user-db:user\nsystem-db:local\n' > "$PROFILE/airootfs/etc/dconf/profile/user"
-cat > "$PROFILE/airootfs/etc/dconf/db/local.d/01-veloguard-background" <<DCONF
-[org/gnome/desktop/background]
-picture-uri='$WP'
-picture-uri-dark='$WP'
-picture-options='zoom'
-primary-color='#13203a'
+#     No dconf database to compile (that was the GNOME path). Instead we install
+#     the SDDM Wayland session that boots straight into Hyprland via uwsm.
+install -d "$PROFILE/airootfs/usr/share/wayland-sessions"
+cat > "$PROFILE/airootfs/usr/share/wayland-sessions/hyprland-uwsm.desktop" <<'SESSION'
+[Desktop Entry]
+Name=Hyprland (VeloGuardOS)
+Comment=VeloGuardOS Hyprland session managed by uwsm
+Exec=uwsm start -g -1 -e -D Hyprland hyprland.desktop
+TryExec=uwsm
+Type=Application
+SESSION
 
-[org/gnome/desktop/screensaver]
-picture-uri='$WP'
-picture-options='zoom'
-
-[org/gnome/login-screen]
-logo='/usr/share/pixmaps/veloguardos.png'
-
-[org/gnome/shell]
-disable-user-extensions=false
-enabled-extensions=['veloguard@veloguardos']
-DCONF
-dconf compile "$PROFILE/airootfs/etc/dconf/db/local" \
-              "$PROFILE/airootfs/etc/dconf/db/local.d"
-
-# 7.6 graphical autologin — boot straight into GNOME as a passwordless live user.
-#     (GDM refuses root logins, and releng defaults to a console; fix both.)
+# 7.6 graphical autologin — boot straight into Hyprland as a passwordless live
+#     user. (SDDM refuses root logins, and releng defaults to a console; fix both.)
 ln -sf /usr/lib/systemd/system/graphical.target \
   "$PROFILE/airootfs/etc/systemd/system/default.target"
 # Create the live user AT BOOT so useradd gets home/perms right in the live system.
 cat > "$PROFILE/airootfs/etc/systemd/system/veloguard-live-user.service" <<'UNIT'
 [Unit]
 Description=VeloGuardOS live user setup
-Before=gdm.service display-manager.service
+Before=sddm.service display-manager.service
 ConditionPathExists=!/home/veloguard
 [Service]
 Type=oneshot
@@ -216,10 +234,20 @@ mkdir -p "$PROFILE/airootfs/etc/sudoers.d"
 printf '%%wheel ALL=(ALL:ALL) NOPASSWD: ALL\n' \
   > "$PROFILE/airootfs/etc/sudoers.d/10-wheel-nopasswd"
 chmod 440 "$PROFILE/airootfs/etc/sudoers.d/10-wheel-nopasswd"
-# GDM auto-login that user → straight to the GNOME desktop + our wallpaper.
-mkdir -p "$PROFILE/airootfs/etc/gdm"
-printf '[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=veloguard\nWaylandEnable=true\n' \
-  > "$PROFILE/airootfs/etc/gdm/custom.conf"
+# SDDM auto-login that user → straight into the Hyprland (uwsm) session.
+mkdir -p "$PROFILE/airootfs/etc/sddm.conf.d"
+cat > "$PROFILE/airootfs/etc/sddm.conf.d/10-veloguard-autologin.conf" <<'SDDM'
+[Autologin]
+User=veloguard
+Session=hyprland-uwsm
+
+[General]
+DisplayServer=wayland
+GreeterEnvironment=QT_WAYLAND_SHELL_INTEGRATION=layer-shell
+
+[Wayland]
+CompositorCommand=Hyprland
+SDDM
 
 # 7.7 boot + login ART generated from the wallpaper — replaces Arch's logo/splash.
 IM="$(command -v magick || command -v convert || true)"

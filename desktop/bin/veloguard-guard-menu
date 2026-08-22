@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+#
+# veloguard-guard-menu — the Hyprland/wofi front-end to the guard. Ports the old
+# GNOME Shell quick toggles (VPN provider menu, Wi-Fi trust, Bulgarian Mode) to
+# a wofi menu. Every privileged action goes through the SAME helpers the GNOME
+# extension used (veloguard-vpn, veloguard-wifi-trust, veloguard-bulgarian-mode),
+# which keep their polkit rules — no new privilege path is introduced here.
+#
+#   veloguard-guard-menu           # top-level menu
+#   veloguard-guard-menu vpn       # jump straight to the VPN submenu
+set -euo pipefail
+
+VPN="${VELOGUARD_VPN:-veloguard-vpn}"
+VPN_UI="${VELOGUARD_VPN_UI:-veloguard-vpn-ui}"
+WIFI_TRUST="${VELOGUARD_WIFI_TRUST:-veloguard-wifi-trust}"
+BGMODE="${VELOGUARD_BGMODE:-veloguard-bulgarian-mode}"
+TRUSTED_LIST="${VELOGUARD_TRUSTED_LIST:-/var/lib/veloguard/trusted-ssids}"
+
+menu() { wofi --dmenu --width 380 --height 320 -p "$1"; }
+note() { notify-send "VeloGuard" "$1"; }
+
+current_ssid() {
+  nmcli -t -f active,ssid dev wifi 2>/dev/null \
+    | awk -F: '$1=="yes"{print substr($0,5); exit}'
+}
+
+vpn_menu() {
+  local choice
+  choice="$(printf '%s\n' \
+    "Connect: Proton VPN" \
+    "Connect: Surfshark" \
+    "Connect: NordVPN" \
+    "Import config…" \
+    "Tor fallback" \
+    "Disconnect VPN" | menu "VeloGuard VPN")" || return 0
+  case "$choice" in
+    "Connect: Proton VPN") vpn_connect proton "Proton VPN" ;;
+    "Connect: Surfshark")  vpn_connect surfshark "Surfshark" ;;
+    "Connect: NordVPN")    vpn_connect nord "NordVPN" ;;
+    "Import config…")      "$VPN_UI" import ;;
+    "Tor fallback")
+      if pkexec "$VPN" tor; then note "Tor fallback enabled"; else note "Tor setup failed"; fi ;;
+    "Disconnect VPN")
+      pkexec "$VPN" disconnect && note "VPN off" || note "VPN disconnect failed" ;;
+  esac
+}
+
+vpn_connect() {
+  local name="$1" label="$2" rc=0
+  pkexec "$VPN" connect "$name" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    note "VPN up: $label (now the default)"
+  elif [ "$rc" -eq 2 ]; then
+    local url; url="$("$VPN" url "$name" 2>/dev/null || true)"
+    [ -n "$url" ] && xdg-open "$url" >/dev/null 2>&1 || true
+    note "No $label config yet — download a WireGuard config, then VPN ▸ Import config…"
+  else
+    note "VPN failed (code $rc) — try: veloguard-vpn status"
+  fi
+}
+
+trust_toggle() {
+  local ssid; ssid="$(current_ssid)"
+  if [ -z "$ssid" ]; then note "Not on Wi-Fi"; return 0; fi
+  local action="trust" r
+  if [ -r "$TRUSTED_LIST" ] && grep -Fxq "$ssid" "$TRUSTED_LIST" 2>/dev/null; then
+    action="untrust"
+  fi
+  r="$(pkexec "$WIFI_TRUST" "$action" 2>/dev/null || true)"
+  case "$r" in
+    trusted)          note "Wi-Fi trusted — no auto-VPN" ;;
+    untrusted)        note "Wi-Fi untrusted — VPN connecting" ;;
+    untrusted-no-vpn) note "Wi-Fi untrusted — import a VPN config to auto-protect" ;;
+    *)                note "Wi-Fi trust: $action ($ssid)" ;;
+  esac
+}
+
+top_menu() {
+  local ssid trust_label choice
+  ssid="$(current_ssid)"
+  if [ -n "$ssid" ] && [ -r "$TRUSTED_LIST" ] && grep -Fxq "$ssid" "$TRUSTED_LIST" 2>/dev/null; then
+    trust_label="Untrust this Wi-Fi ($ssid)"
+  elif [ -n "$ssid" ]; then
+    trust_label="Trust this Wi-Fi ($ssid)"
+  else
+    trust_label="Trust this Wi-Fi (not connected)"
+  fi
+
+  choice="$(printf '%s\n' \
+    "VPN…" \
+    "$trust_label" \
+    "AI agent…" \
+    "Toggle Bulgarian Mode" \
+    "Guard status" \
+    "Power menu…" | menu "🛡 VeloGuard")" || return 0
+  case "$choice" in
+    "VPN…")                 vpn_menu ;;
+    "AI agent…")            veloguard-agent ;;
+    "Toggle Bulgarian Mode")
+      "$BGMODE" toggle || note "Bulgarian Mode failed — run: veloguard-bulgarian-mode selftest" ;;
+    "Guard status")
+      note "$(veloguard status 2>/dev/null | head -n 20 || echo 'guard status unavailable')" ;;
+    "Power menu…")          veloguard-powermenu ;;
+    *)                      [ "$choice" = "$trust_label" ] && trust_toggle ;;
+  esac
+}
+
+case "${1:-}" in
+  vpn) vpn_menu ;;
+  *)   top_menu ;;
+esac

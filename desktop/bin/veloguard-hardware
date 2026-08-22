@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#
+# veloguard-hardware — run the VeloGuardOS (Omarchy-derived) hardware/driver
+# setup: detect the GPU/Wi-Fi/touchpad/etc. and install the matching drivers.
+# Safe to re-run; each probe is guarded. Root required.
+#
+#   sudo veloguard-hardware
+exec bash "${VELOGUARD_HW_DIR:-/usr/share/veloguard/hardware}/all.sh" "$@"

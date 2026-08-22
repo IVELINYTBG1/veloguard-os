@@ -7,7 +7,10 @@ USB stick and it runs live, with an "Install to Disk" option. Built by
 
 ## What's in it
 
-- Arch base + **GNOME on Wayland + PipeWire**, NetworkManager, GDM.
+- Arch base + an **Omarchy-derived Hyprland desktop on Wayland + PipeWire**
+  (Waybar, mako, wofi, SDDM autologin → Hyprland via uwsm), NetworkManager.
+  The desktop is vendored hermetically from `desktop/` (official Arch repos
+  only, no AUR); see [`desktop/README.md`](../desktop/README.md).
 - The **VeloGuard guard** at `/opt/veloguard` with `veloguard`, `veloguard-vpn`,
   `veloguard-update`, `veloguard-install`, `veloguard-bulgarian-mode` on `PATH`.
 - Security stack: `nftables`, `wireguard-tools`, `bubblewrap`, `tor`.

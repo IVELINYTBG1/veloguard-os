@@ -1,5 +1,6 @@
 {
-  "_comment": "The AI plane. Local-only by design: no cloud APIs, no keys.",
-  "_choices": "mock (offline keyword matching) | snn (local spiking neural net — model code lands in guardd/snn.py)",
+  "_comment": "The AI plane. mock/snn are fully local; claude/ollama are opt-in reasoning brains.",
+  "_choices": "mock (offline keywords) | snn (local spiking neural net) | claude (Anthropic API, needs key) | ollama (local model via Ollama)",
+  "_note": "No matter the brain, every action is typed, IP-sanitized, policy-gated, consent-gated and audited before the kernel. Select at runtime: guardd use <plane>.",
   "adapter": "mock"
 }

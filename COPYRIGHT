@@ -13,3 +13,11 @@ Scope / "our tweaks":
   * The Linux kernel source is NOT vendored in this repo. It is fetched from
     Linus Torvalds' tree at build time and remains GPL-2.0 © its own authors;
     our kernel changes are the config fragments under veloguard/kernel/.
+  * The desktop layer under desktop/ is derived from Omarchy
+    (https://github.com/basecamp/omarchy), MIT © David Heinemeier Hansson /
+    37signals. The MIT license permits inclusion in this GPL-2.0-only work; the
+    upstream MIT notice is retained in desktop/omarchy/OMARCHY-LICENSE and a
+    file-by-file provenance map in desktop/omarchy/PROVENANCE.md.
+
+Third-party licenses:
+  * Omarchy — MIT — desktop/omarchy/OMARCHY-LICENSE

@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+#
+# veloguard-waybar-guard — emit a single Waybar JSON object describing the
+# guard's at-a-glance state: VPN, Wi-Fi trust, staged kernel update, and guard
+# health. Consumed by the Waybar "custom/guard" module (return-type: json).
+#
+# This is READ-ONLY: it only inspects state the GNOME extension already polled
+# (WireGuard interfaces, the current SSID, the trusted-SSID mirror, the staged-
+# update marker). No privileged action is taken here.
+#
+# Output: {"text":"🛡","tooltip":"...","class":"vpn-up|untrusted|update|alert|ok"}
+set -euo pipefail
+
+TRUSTED_LIST="${VELOGUARD_TRUSTED_LIST:-/var/lib/veloguard/trusted-ssids}"
+PENDING="${VELOGUARD_PENDING:-/var/lib/veloguard/staged-kernel/pending.json}"
+
+# --- VPN: any WireGuard interface up? ---------------------------------------
+vpn_iface=""
+if command -v ip >/dev/null 2>&1; then
+  vpn_iface="$(ip -br link show type wireguard 2>/dev/null \
+    | awk 'NR==1{sub(/@.*/,"",$1); print $1}')"
+fi
+
+# --- Wi-Fi: current SSID + trusted? -----------------------------------------
+ssid=""
+if command -v nmcli >/dev/null 2>&1; then
+  ssid="$(nmcli -t -f active,ssid dev wifi 2>/dev/null \
+    | awk -F: '$1=="yes"{print substr($0,5); exit}')"
+fi
+trusted="unknown"
+if [ -n "$ssid" ]; then
+  if [ -r "$TRUSTED_LIST" ] && grep -Fxq "$ssid" "$TRUSTED_LIST" 2>/dev/null; then
+    trusted="yes"
+  else
+    trusted="no"
+  fi
+fi
+
+# --- Staged kernel update? --------------------------------------------------
+update_version=""
+if [ -r "$PENDING" ]; then
+  update_version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PENDING" 2>/dev/null | head -n1)"
+  [ -n "$update_version" ] || update_version="pending"
+fi
+
+# --- Compose tooltip lines --------------------------------------------------
+if [ -n "$vpn_iface" ]; then
+  vpn_line="VPN: up ($vpn_iface)"
+else
+  vpn_line="VPN: off"
+fi
+case "$trusted" in
+  yes)     wifi_line="Wi-Fi: $ssid (trusted)";;
+  no)      wifi_line="Wi-Fi: $ssid (untrusted)";;
+  *)       wifi_line="Wi-Fi: not connected";;
+esac
+if [ -n "$update_version" ]; then
+  update_line="Update: kernel $update_version staged"
+else
+  update_line="Update: none staged"
+fi
+
+tooltip="🛡 VeloGuard\n${vpn_line}\n${wifi_line}\n${update_line}\n\nClick: guard menu  ·  Right-click: VPN"
+
+# --- Decide primary class + text (priority order) ---------------------------
+# untrusted-Wi-Fi-without-VPN is the loudest state, then staged update, then VPN.
+text="🛡"
+if [ "$trusted" = "no" ] && [ -z "$vpn_iface" ]; then
+  cls="untrusted"; text="🛡!"
+elif [ -n "$update_version" ]; then
+  cls="update"; text="🛡⬆"
+elif [ -n "$vpn_iface" ]; then
+  cls="vpn-up"
+else
+  cls="ok"
+fi
+
+# --- Emit JSON (escape backslash newlines for Waybar tooltip) ---------------
+printf '{"text":"%s","tooltip":"%s","class":"%s"}\n' "$text" "$tooltip" "$cls"

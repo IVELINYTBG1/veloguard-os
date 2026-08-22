@@ -1,0 +1,33 @@
+# VeloGuardOS notifications (mako) — derived from Omarchy default/mako/core.ini
+# (MIT). Theme colors are pulled from the active VeloGuard theme.
+
+anchor=top-right
+group-by=app-name,summary,body
+default-timeout=5000
+width=420
+outer-margin=20
+padding=10,15
+border-size=2
+max-icon-size=32
+font=sans-serif 14px
+
+# Fallback colors (overridden by the theme include below)
+background-color=#13203a
+text-color=#ffffff
+border-color=#33ccff
+
+[app-name=Spotify]
+invisible=1
+
+[mode=do-not-disturb]
+invisible=true
+
+[mode=do-not-disturb app-name=notify-send]
+invisible=false
+
+[urgency=critical]
+default-timeout=0
+layer=overlay
+
+# Theme colors (created/updated by `veloguard-theme`)
+include=~/.config/veloguard/current/mako.ini

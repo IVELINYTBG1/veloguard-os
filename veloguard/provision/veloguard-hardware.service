@@ -1,0 +1,15 @@
+[Unit]
+Description=VeloGuardOS hardware/driver setup (Omarchy-derived, first boot)
+# Needs the network up to fetch drivers, and runs once.
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!/var/lib/veloguard/.hardware-done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/veloguard-hardware
+ExecStartPost=/usr/bin/bash -c 'mkdir -p /var/lib/veloguard && touch /var/lib/veloguard/.hardware-done'
+
+[Install]
+WantedBy=multi-user.target

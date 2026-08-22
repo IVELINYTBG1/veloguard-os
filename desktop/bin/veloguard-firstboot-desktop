@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+#
+# veloguard-firstboot-desktop — on the FIRST graphical login, open a terminal and
+# run the guard's AI-plane setup wizard (`veloguard setup`) once, then never
+# again. Re-run any time with `veloguard setup`, or delete the marker below.
+# Launched from the Hyprland autostart (default/hypr/autostart.conf).
+set -euo pipefail
+
+USER_MARKER="${VELOGUARD_USER_MARKER:-$HOME/.config/veloguard/.setup-done}"
+SYS_MARKER="${VELOGUARD_MARKER:-/var/lib/veloguard/.setup-done}"
+
+# Already configured (per-user or system-wide) → nothing to do.
+[ -f "$USER_MARKER" ] && exit 0
+[ -f "$SYS_MARKER" ]  && exit 0
+
+# Pick an available terminal.
+TERM_BIN="$(command -v alacritty || command -v foot || command -v xterm || true)"
+[ -n "$TERM_BIN" ] || exit 0
+
+# Give the compositor a moment to settle, then run the wizard interactively.
+sleep 2
+"$TERM_BIN" -e bash -lc \
+  'veloguard setup; echo; read -rp "Setup complete — press Enter to close…" _' || true
+
+mkdir -p "$(dirname "$USER_MARKER")"
+touch "$USER_MARKER"

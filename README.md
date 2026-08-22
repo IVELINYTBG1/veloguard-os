@@ -55,9 +55,17 @@ do anything outside policy.
 - **🐧 Custom kernel** — fetched from Linus's tree, re-merged with our config
   fragments, validated on **x86-64 (262 symbols) and arm64 (72 symbols)** with
   `make olddefconfig`. Broad hardware + firmware + codecs out of the box.
-- **🖥️ Desktop** — Wayland + PipeWire + GNOME; Brave default browser; Discord,
-  Dolphin, Viber, ZapZap, LibreOffice, Transmission, **Waydroid** (Android apps,
-  binder baked into our kernel), GNOME Software.
+- **🖥️ Desktop** — Wayland + PipeWire + an **Omarchy-derived Hyprland** tiling
+  desktop (Waybar, mako, wofi, SDDM), re-branded and **guard-integrated**: a
+  Waybar 🛡 module and a `Super+Shift+G` menu drive the VPN, Wi-Fi trust,
+  Bulgarian Mode, the AI agent, and staged updates. **Default Hyprland
+  keybindings**, Omarchy's look & feel, live theme switching (`veloguard-theme`).
+  See [`desktop/`](desktop/). Derived from [Omarchy](https://omarchy.org) (MIT).
+- **🔌 Omarchy hardware layer** — a first-boot driver setup (NVIDIA/Vulkan/Wi-Fi/
+  Bluetooth/touchpad…) so hardware "just works"; re-run with `veloguard-hardware`.
+- **🤖 Agentic brains** — the guard reasons with **Claude** (API) or **Ollama**
+  (local) and drives the machine only through the guard; launch Omarchy-style
+  with `veloguard-agent`, or attach any MCP coding agent. See [`desktop/agents/`](desktop/agents/).
 - **🇧🇬 Bulgarian Mode** — an easter egg. You'll find it.
 
 ## Quick start (the guard)
@@ -110,6 +118,12 @@ upgrade path on top of the base ISO. See [`iso/README.md`](iso/README.md).
 [`GPL-2.0-only`](LICENSE) — the same license as the Linux kernel it builds on.
 VeloGuardOS components are GPL-2.0 © the VeloGuardOS authors; the kernel is
 fetched at build time and remains GPL-2.0 © its own authors.
+
+The desktop layer under [`desktop/`](desktop/) is **derived from
+[Omarchy](https://github.com/basecamp/omarchy)** (MIT © David Heinemeier Hansson
+/ 37signals); the MIT license is compatible with GPL-2.0. Its license and a
+file-by-file provenance map are kept in
+[`desktop/omarchy/`](desktop/omarchy/). Credits: [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
 
 <div align="center"><sub>Built with Claude Code. For my brothers — the techies and experimenters. 🇧🇬</sub></div>
 

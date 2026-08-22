@@ -1,0 +1,34 @@
+/* VeloGuardOS wofi style — VeloGuard blue, JetBrains Mono. */
+window {
+  margin: 0;
+  border: 2px solid #33ccff;
+  background-color: #13203a;
+  border-radius: 0;
+  font-family: 'JetBrainsMono Nerd Font', monospace;
+  font-size: 14px;
+}
+
+#input {
+  margin: 8px;
+  padding: 8px;
+  border: none;
+  color: #ffffff;
+  background-color: #0d1729;
+}
+
+#inner-box, #outer-box, #scroll {
+  background-color: #13203a;
+}
+
+#text {
+  color: #ffffff;
+  padding: 2px 8px;
+}
+
+#entry:selected {
+  background-color: #33ccff;
+}
+
+#entry:selected #text {
+  color: #0d1729;
+}

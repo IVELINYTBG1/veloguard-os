@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+#
+# veloguard-agent — launch VeloGuard's guarded autonomous agent, Omarchy-style
+# (a default brain, launched in a terminal). The agent drives the machine ONLY
+# through the guard (policy → consent → audit); it is `guardd agent` under the
+# hood, so a weak/remote brain can be wrong but never unaccountable.
+#
+# Backends (the "coding agent" of Omarchy's agent plugin, for VeloGuard):
+#   claude — Anthropic API (needs a key: `guardd key claude <KEY>`)
+#   ollama — a LOCAL model via Ollama (private, free; `ollama serve` + a pulled model)
+#
+#   veloguard-agent                     # interactive agent console (default brain)
+#   veloguard-agent "lock down: block 203.0.113.10 and raise the VPN"
+#   veloguard-agent set claude|ollama   # choose + persist the default brain
+#   veloguard-agent mcp                 # print the MCP config for external agents
+#   veloguard-agent setup               # run the guard's AI-plane wizard
+set -euo pipefail
+
+DEFAULT_FILE="${VELOGUARD_AGENT_FILE:-$HOME/.config/veloguard/agent}"
+AUTONOMY="${VELOGUARD_AGENT_AUTONOMY:-guarded}"
+MCP_TEMPLATE="${VELOGUARD_MCP_TEMPLATE:-/usr/share/veloguard/agents/veloguard-mcp.json}"
+
+vg() { command veloguard "$@"; }                 # the guard CLI (on PATH)
+
+get_default() { [ -f "$DEFAULT_FILE" ] && cat "$DEFAULT_FILE" || true; }
+set_default() {
+  mkdir -p "$(dirname "$DEFAULT_FILE")"
+  printf '%s\n' "$1" > "$DEFAULT_FILE"
+  vg use "$1" >/dev/null 2>&1 || true            # make it the guard's active brain
+}
+
+print_mcp() {
+  echo "Attach any MCP-capable coding agent (Claude Code, Codex, opencode, …) to"
+  echo "the guard so it drives the machine THROUGH the guard. Add this to the"
+  echo "agent's MCP config (e.g. ./.mcp.json):"
+  echo
+  if [ -r "$MCP_TEMPLATE" ]; then cat "$MCP_TEMPLATE"; else cat <<'JSON'
+{ "mcpServers": { "veloguard": { "command": "veloguard-mcp",
+    "env": { "VELOGUARD_AGENT_AUTONOMY": "guarded" } } } }
+JSON
+  fi
+}
+
+case "${1:-}" in
+  set)
+    case "${2:-}" in
+      claude|ollama) set_default "$2"; echo "default agent brain → $2" ;;
+      *) echo "usage: veloguard-agent set <claude|ollama>" >&2; exit 2 ;;
+    esac
+    exit 0 ;;
+  mcp)    print_mcp; exit 0 ;;
+  setup)  exec vg setup ;;
+  -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+esac
+
+# Resolve the brain: stored default, else pick one (wofi in a graphical session).
+brain="$(get_default)"
+if [ -z "$brain" ]; then
+  if command -v wofi >/dev/null 2>&1 && [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    brain="$(printf 'claude\nollama\n' | wofi --dmenu -p 'VeloGuard agent brain')" || exit 0
+    [ -n "$brain" ] && set_default "$brain" || exit 0
+  else
+    echo "no default agent brain — run: veloguard-agent set claude|ollama" >&2
+    exit 1
+  fi
+fi
+vg use "$brain" >/dev/null 2>&1 || true
+
+goal="${*:-}"
+if [ -n "$goal" ]; then
+  run_cmd="veloguard agent --autonomy $(printf %q "$AUTONOMY") $(printf %q "$goal")"
+else
+  # No goal → an interactive agent console (guardd agent is one-shot per goal).
+  run_cmd="echo '🛡 VeloGuard agent ('"$brain"', autonomy=$AUTONOMY) — type a goal, blank line to quit.'; \
+while true; do read -rp 'guard-agent> ' g || break; [ -z \"\$g\" ] && break; \
+veloguard agent --autonomy $(printf %q "$AUTONOMY") \"\$g\"; echo; done"
+fi
+
+TERM_BIN="$(command -v alacritty || command -v foot || command -v xterm || true)"
+if [ -n "$TERM_BIN" ] && [ -n "${WAYLAND_DISPLAY:-}" ]; then
+  # Fixed app-id so window rules/themes can single out the agent window.
+  exec "$TERM_BIN" --class org.veloguard.agent -e bash -lc "$run_cmd"
+else
+  exec bash -lc "$run_cmd"
+fi

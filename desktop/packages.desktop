@@ -1,0 +1,69 @@
+# VeloGuardOS desktop stack — Omarchy-style Hyprland, all from OFFICIAL Arch repos
+# (no AUR, so the ISO stays hermetic). Single source of truth: appended to the
+# archiso package list by iso/build.sh and installed by
+# veloguard/provision/install-desktop.sh. One package per line; '#' comments and
+# blank lines are ignored by consumers.
+
+# Wayland compositor + session
+hyprland
+hyprlock
+hypridle
+hyprpicker
+hyprsunset
+xdg-desktop-portal-hyprland
+xdg-desktop-portal-gtk
+uwsm
+qt5-wayland
+qt6-wayland
+kvantum
+
+# Bar, notifications, launcher, wallpaper, OSD
+waybar
+mako
+wofi
+swaybg
+swayosd
+
+# Login manager
+sddm
+
+# Polkit agent (VPN import / update-arming raise polkit prompts)
+polkit-gnome
+
+# Terminal, editor, files, thumbnails
+alacritty
+neovim
+thunar
+thunar-volman
+tumbler
+gvfs
+
+# Audio / media / bluetooth control
+pavucontrol
+playerctl
+blueman
+
+# Screenshots / clipboard / brightness
+grim
+slurp
+satty
+wl-clipboard
+cliphist
+brightnessctl
+
+# Fonts
+ttf-jetbrains-mono-nerd
+ttf-font-awesome
+noto-fonts
+noto-fonts-emoji
+
+# XDG user dirs
+xdg-user-dirs
+
+# Hardware/driver detection (used by the first-boot hardware layer)
+pciutils
+usbutils
+
+# Local AI agent brain (the guard's Ollama plane; the Claude plane needs only a
+# key and talks to the API over stdlib HTTP, so no extra package for it).
+ollama

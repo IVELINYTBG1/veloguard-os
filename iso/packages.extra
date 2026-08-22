@@ -7,14 +7,9 @@ networkmanager
 bluez
 bluez-utils
 
-# desktop: Wayland + PipeWire + GNOME (minimal)
-gnome-shell
-gdm
-nautilus
-gnome-console
-gnome-control-center
-gnome-software
-xdg-desktop-portal-gnome
+# desktop: Wayland + PipeWire base. The Hyprland desktop stack (Omarchy-derived)
+# is NOT listed here — build.sh appends it from desktop/packages.desktop, the
+# single source of truth shared with the installed-system provisioner.
 pipewire
 pipewire-pulse
 pipewire-alsa

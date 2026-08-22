@@ -7,10 +7,14 @@ Two kinds of command:
     python3 -m guardd --apply --yes "block 203.0.113.10"     # for real, no prompt
 
   CONTROL the core (hot-swap — takes effect on the very next intent):
-    python3 -m guardd use snn                     # the local SNN brain (no cloud, no keys)
-    python3 -m guardd use mock                    # offline keyword fallback
-    python3 -m guardd model snn /path/to/weights  # point the SNN at its model files
-    python3 -m guardd status                      # what's active
+    python3 -m guardd use ollama                   # a LOCAL model via Ollama (private, free)
+    python3 -m guardd use claude                   # Anthropic API (needs a key)
+    python3 -m guardd use snn                       # the built-in local SNN brain
+    python3 -m guardd use mock                      # offline keyword fallback
+    python3 -m guardd key claude sk-ant-...         # store the Claude API key (chmod 600)
+    python3 -m guardd host ollama http://127.0.0.1:11434
+    python3 -m guardd model ollama llama3.1         # pick the model (or SNN weights path)
+    python3 -m guardd status                        # what's active
 
   PROTECT:
     python3 -m guardd net --ssid Cafe --security open   # classify wifi, auto-VPN
@@ -46,7 +50,7 @@ VELOGUARD_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_POLICY_PATH = VELOGUARD_DIR / "policy.json"
 CONFIG_PATH = VELOGUARD_DIR / "config.json"
 
-CONTROL_VERBS = {"setup", "use", "model", "status",
+CONTROL_VERBS = {"setup", "use", "model", "key", "host", "status",
                  "providers", "net", "honeypot", "analyze", "run-safe",
                  "update", "agent", "mcp", "voice", "help"}
 
@@ -119,25 +123,62 @@ def _setup_snn() -> None:
     print("    (model code pending: intents will say so until it lands in guardd/snn.py)")
 
 
+def _setup_claude() -> None:
+    print("\n  Claude (Anthropic API) — most capable brain. Only the intent/"
+          "prompt leaves the box; the key is stored chmod 600 and never logged.")
+    key = _ask("  API key (blank keeps existing / uses $ANTHROPIC_API_KEY)")
+    if key:
+        state.set_key("claude", key)
+    model = _ask("  model", state.model_for("claude"))
+    if model:
+        state.set_model("claude", model)
+    state.set_active("claude")
+    record({"control": "setup", "plane": "claude",
+            "model": state.model_for("claude"), "result": "ok"})
+    print("  → Claude plane selected.")
+
+
+def _setup_ollama() -> None:
+    print("\n  Ollama (LOCAL model) — private, free, offline. Needs `ollama serve` "
+          "running and the model pulled (`ollama pull <model>`).")
+    host = _ask("  host", state.host_for("ollama"))
+    if host:
+        state.set_host("ollama", host)
+    model = _ask("  model", state.model_for("ollama"))
+    if model:
+        state.set_model("ollama", model)
+    state.set_active("ollama")
+    record({"control": "setup", "plane": "ollama",
+            "model": state.model_for("ollama"), "result": "ok"})
+    print("  → Ollama plane selected — nothing leaves this machine.")
+
+
 def _setup_wizard() -> int:
     print(_BANNER)
     if not sys.stdin.isatty():
         print("\033[2m(non-interactive input — reading answers from stdin)\033[0m")
 
     plane = _choose("\nChoose your AI plane:", [
-        ("snn",  "SNN   — VeloGuard's built-in local neural brain (model lands soon)"),
-        ("mock", "Mock  — offline keyword mode; deterministic, works today"),
-    ], default=2)
+        ("ollama", "Ollama — a LOCAL model, private & free (needs `ollama serve`)"),
+        ("claude", "Claude — Anthropic API, most capable (needs an API key)"),
+        ("snn",    "SNN    — VeloGuard's built-in local neural brain (lands soon)"),
+        ("mock",   "Mock   — offline keyword mode; deterministic, works today"),
+    ], default=4)
 
     if plane == "mock":
         state.set_active("mock")
         record({"control": "setup", "plane": "mock", "result": "ok"})
         print("\n  → offline mock mode. Run 'guardd setup' again any time.")
+    elif plane == "claude":
+        _setup_claude()
+    elif plane == "ollama":
+        _setup_ollama()
     else:
         _setup_snn()
 
     active = state.active_provider(config_default=_configured_adapter())
-    if active == "mock" and _ask("\nTest the brain now? [Y/n]", "Y").lower() in ("y", "yes"):
+    if active in ("mock", "claude", "ollama") \
+            and _ask("\nTest the brain now? [Y/n]", "Y").lower() in ("y", "yes"):
         _test_connection(active)
 
     # Voice assistant wake word (optional; engines via provision/install-voice.sh)
@@ -338,15 +379,16 @@ def _agent(rest: list[str]) -> int:
 
     provider = state.active_provider(config_default=_configured_adapter())
     if provider == "mock":
-        print("agent needs the SNN brain — run: guardd use snn "
-              "(its planner lands with the model code)", file=sys.stderr)
+        print("agent needs a reasoning brain — run: guardd use claude|ollama|snn",
+              file=sys.stderr)
         return 2
     cfg = state.adapter_config(provider)
-    print(f"agent: {provider}/{cfg.get('model_path') or '-'} · autonomy={autonomy} · "
+    label = cfg.get("model") or cfg.get("model_path") or "-"
+    print(f"agent: {provider}/{label} · autonomy={autonomy} · "
           f"{'APPLY' if apply else 'dry-run'}")
     try:
-        result = agent.run(goal, provider, model=cfg.get("model_path"),
-                           autonomy=autonomy, apply=apply, max_steps=max_steps)
+        result = agent.run(goal, provider, autonomy=autonomy, apply=apply,
+                           max_steps=max_steps)
     except (RuntimeError, KeyError, ValueError) as e:
         print(f"agent error: {e}", file=sys.stderr)
         return 1
@@ -547,9 +589,33 @@ def _control(argv: list[str]) -> int:
         return voice.run()
 
     if verb == "providers":
+        tags = {
+            "mock":   " (offline keyword fallback)",
+            "snn":    " (local SNN brain — model pending)",
+            "claude": " (Anthropic API — needs a key)",
+            "ollama": " (local model via Ollama — private, free)",
+        }
         for p in state.PROVIDERS:
-            tag = " (local SNN brain — model pending)" if p == "snn" else " (offline keywords)"
-            print(f"  {p}{tag}")
+            print(f"  {p}{tags.get(p, '')}")
+        return 0
+
+    if verb == "key":
+        if len(rest) < 2 or rest[0] != "claude":
+            print("usage: guardd key claude <API_KEY>", file=sys.stderr)
+            return 2
+        state.set_key("claude", rest[1])
+        print("claude API key stored (chmod 600, never logged)")
+        record({"control": "key", "provider": "claude", "result": "ok"})
+        return 0
+
+    if verb == "host":
+        if len(rest) < 2 or rest[0] != "ollama":
+            print("usage: guardd host ollama <URL>", file=sys.stderr)
+            return 2
+        state.set_host("ollama", rest[1])
+        print(f"ollama host → {rest[1]}")
+        record({"control": "host", "provider": "ollama", "host": rest[1],
+                "result": "ok"})
         return 0
 
     if verb == "use":
@@ -570,6 +636,11 @@ def _control(argv: list[str]) -> int:
         if provider == "snn":
             print("  ⚠ SNN model code pending — intents will say so until it "
                   "lands in guardd/snn.py")
+        elif provider == "claude" and not state.get_key("claude"):
+            print("  ⚠ no Claude API key yet — set one: guardd key claude <KEY>")
+        elif provider == "ollama":
+            print(f"  ℹ using local Ollama at {state.host_for('ollama')} — "
+                  "make sure `ollama serve` is running and the model is pulled")
         record({"control": "use", "provider": provider,
                 "model": state.model_for(provider) if provider != "mock" else None,
                 "result": "ok"})
@@ -594,9 +665,14 @@ def _control(argv: list[str]) -> int:
         print(f"active AI plane : {active}")
         print("providers:")
         for p in state.PROVIDERS:
-            line = f"  {'➤' if p == active else ' '} {p:<5}"
+            line = f"  {'➤' if p == active else ' '} {p:<6}"
             if p == "snn":
                 line += f" model={state.model_for('snn') or '(default path)'}  [model code pending]"
+            elif p == "claude":
+                have = "key set" if state.get_key("claude") else "no key"
+                line += f" model={state.model_for('claude')}  ({have})"
+            elif p == "ollama":
+                line += f" model={state.model_for('ollama')}  host={state.host_for('ollama')}"
             print(line)
         return 0
 

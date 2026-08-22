@@ -1,7 +1,0 @@
-{
-  "uuid": "veloguard@veloguardos",
-  "name": "VeloGuard Quick Toggles",
-  "description": "VPN (Proton/Surfshark/Nord) and Bulgarian Mode toggles in the Quick Settings panel.",
-  "shell-version": ["46", "47", "48", "49", "50"],
-  "version": 1
-}

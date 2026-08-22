@@ -1,0 +1,26 @@
+# VeloGuardOS terminal (alacritty). Theme colors are layered from the active
+# VeloGuard theme; this file holds font/behavior. See desktop/omarchy/PROVENANCE.md.
+
+# Active theme colors (managed by veloguard-theme). Missing file is tolerated
+# by alacritty's import (it warns but continues).
+general.import = ["~/.config/veloguard/current/alacritty.toml"]
+
+[font]
+size = 11.0
+
+[font.normal]
+family = "JetBrainsMono Nerd Font"
+style = "Regular"
+
+[window]
+padding = { x = 10, y = 10 }
+opacity = 0.98
+dynamic_padding = true
+
+[cursor]
+style = { shape = "Block", blinking = "On" }
+
+# Fallback colors (VeloGuard blue) if no theme is applied yet.
+[colors.primary]
+background = "#13203a"
+foreground = "#e6edf7"

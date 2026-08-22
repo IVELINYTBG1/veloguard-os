@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+#
+# veloguard-theme — switch the VeloGuardOS desktop theme. A theme is a directory
+# under /usr/share/veloguard/themes/<name> holding hyprland.conf, waybar.css,
+# mako.ini, alacritty.toml, hyprlock.conf and gum.env.conf. The active theme is
+# the symlink ~/.config/veloguard/current -> that directory; the desktop configs
+# source files through that symlink, so switching is just a relink + reload.
+#
+#   veloguard-theme                 # same as: menu
+#   veloguard-theme ensure          # make sure a theme is selected (default: veloguard)
+#   veloguard-theme set <name>      # switch to a theme
+#   veloguard-theme menu            # pick a theme with wofi
+#   veloguard-theme list            # list installed theme names
+#   veloguard-theme current         # print the active theme name
+#   veloguard-theme background      # print the active theme's wallpaper path
+set -euo pipefail
+
+THEMES_DIR="${VELOGUARD_THEMES_DIR:-/usr/share/veloguard/themes}"
+DEFAULT_THEME="${VELOGUARD_DEFAULT_THEME:-veloguard}"
+DEFAULT_BG="${VELOGUARD_DEFAULT_BG:-/usr/share/backgrounds/veloguard/default.png}"
+CURRENT="${VELOGUARD_CURRENT:-$HOME/.config/veloguard/current}"
+
+list_themes() {
+  [ -d "$THEMES_DIR" ] || return 0
+  for d in "$THEMES_DIR"/*/; do
+    [ -d "$d" ] && basename "$d"
+  done
+}
+
+current_name() {
+  if [ -L "$CURRENT" ]; then basename "$(readlink -f "$CURRENT")"; fi
+}
+
+background_path() {
+  local dir; dir="$(readlink -f "$CURRENT" 2>/dev/null || true)"
+  if [ -n "$dir" ]; then
+    for f in "$dir"/background "$dir"/background.png "$dir"/background.jpg; do
+      [ -r "$f" ] && { printf '%s\n' "$f"; return 0; }
+    done
+  fi
+  printf '%s\n' "$DEFAULT_BG"
+}
+
+reload_session() {
+  # Best-effort live reload; harmless (and silent) outside a graphical session.
+  hyprctl reload >/dev/null 2>&1 || true
+  makoctl reload >/dev/null 2>&1 || true
+  pkill -SIGUSR2 waybar >/dev/null 2>&1 || true
+  if command -v swaybg >/dev/null 2>&1; then
+    pkill swaybg >/dev/null 2>&1 || true
+    swaybg -i "$(background_path)" -m fill >/dev/null 2>&1 &
+  fi
+}
+
+set_theme() {
+  local name="$1"
+  if [ ! -d "$THEMES_DIR/$name" ]; then
+    echo "veloguard-theme: no such theme: $name" >&2
+    echo "available: $(list_themes | paste -sd' ' -)" >&2
+    return 1
+  fi
+  mkdir -p "$(dirname "$CURRENT")"
+  ln -sfn "$THEMES_DIR/$name" "$CURRENT"
+  reload_session
+  command -v notify-send >/dev/null 2>&1 && notify-send "VeloGuard" "Theme: $name" || true
+}
+
+ensure_theme() {
+  if [ -d "$CURRENT" ] || { [ -L "$CURRENT" ] && [ -e "$CURRENT" ]; }; then
+    return 0                                   # already points somewhere valid
+  fi
+  local first
+  if [ -d "$THEMES_DIR/$DEFAULT_THEME" ]; then
+    first="$DEFAULT_THEME"
+  else
+    first="$(list_themes | head -n1)"
+  fi
+  [ -n "$first" ] || { echo "veloguard-theme: no themes installed in $THEMES_DIR" >&2; return 1; }
+  mkdir -p "$(dirname "$CURRENT")"
+  ln -sfn "$THEMES_DIR/$first" "$CURRENT"
+}
+
+menu_pick() {
+  local pick
+  pick="$(list_themes | wofi --dmenu --width 320 --height 260 -p "Theme")" || return 0
+  [ -n "$pick" ] && set_theme "$pick"
+}
+
+case "${1:-menu}" in
+  ensure)     ensure_theme ;;
+  set)        [ $# -ge 2 ] || { echo "usage: veloguard-theme set <name>" >&2; exit 2; }; set_theme "$2" ;;
+  menu)       ensure_theme; menu_pick ;;
+  list)       list_themes ;;
+  current)    current_name ;;
+  background) ensure_theme >/dev/null 2>&1 || true; background_path ;;
+  *)          echo "usage: veloguard-theme {ensure|set <name>|menu|list|current|background}" >&2; exit 2 ;;
+esac
