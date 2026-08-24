@@ -198,17 +198,10 @@ ln -sf /etc/systemd/system/veloguard-branding.service \
 #     from /usr/share/veloguard/desktop/hypr/autostart.conf) pointing at the
 #     active theme's background, which falls back to the PNG already in airootfs:
 #       /usr/share/backgrounds/veloguard/default.png
-#     No dconf database to compile (that was the GNOME path). Instead we install
-#     the SDDM Wayland session that boots straight into Hyprland via uwsm.
-install -d "$PROFILE/airootfs/usr/share/wayland-sessions"
-cat > "$PROFILE/airootfs/usr/share/wayland-sessions/hyprland-uwsm.desktop" <<'SESSION'
-[Desktop Entry]
-Name=Hyprland (VeloGuardOS)
-Comment=VeloGuardOS Hyprland session managed by uwsm
-Exec=uwsm start -g -1 -e -D Hyprland hyprland.desktop
-TryExec=uwsm
-Type=Application
-SESSION
+#     No dconf database to compile (that was the GNOME path). The SDDM Wayland
+#     session `hyprland-uwsm.desktop` is shipped by the `hyprland` package itself
+#     (uwsm-managed), and SDDM autologin (step 7.6) selects it by that name — so
+#     we must NOT write our own copy here or pacstrap fails with a file conflict.
 
 # 7.6 graphical autologin — boot straight into Hyprland as a passwordless live
 #     user. (SDDM refuses root logins, and releng defaults to a console; fix both.)
