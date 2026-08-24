@@ -53,7 +53,7 @@ brightnessctl
 
 # Fonts
 ttf-jetbrains-mono-nerd
-ttf-font-awesome
+otf-font-awesome
 noto-fonts
 noto-fonts-emoji
 
