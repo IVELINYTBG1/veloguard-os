@@ -227,19 +227,15 @@ mkdir -p "$PROFILE/airootfs/etc/sudoers.d"
 printf '%%wheel ALL=(ALL:ALL) NOPASSWD: ALL\n' \
   > "$PROFILE/airootfs/etc/sudoers.d/10-wheel-nopasswd"
 chmod 440 "$PROFILE/airootfs/etc/sudoers.d/10-wheel-nopasswd"
-# SDDM auto-login that user → straight into the Hyprland (uwsm) session.
+# SDDM auto-login that user → straight into the plain Hyprland session.
+# (Plain `hyprland.desktop` from the hyprland package, Exec=Hyprland — NOT the
+# uwsm session, which didn't come up reliably under autologin. Minimal block:
+# the greeter is skipped for autologin, so no DisplayServer/CompositorCommand.)
 mkdir -p "$PROFILE/airootfs/etc/sddm.conf.d"
 cat > "$PROFILE/airootfs/etc/sddm.conf.d/10-veloguard-autologin.conf" <<'SDDM'
 [Autologin]
 User=veloguard
-Session=hyprland-uwsm
-
-[General]
-DisplayServer=wayland
-GreeterEnvironment=QT_WAYLAND_SHELL_INTEGRATION=layer-shell
-
-[Wayland]
-CompositorCommand=Hyprland
+Session=hyprland
 SDDM
 
 # 7.7 boot + login ART generated from the wallpaper — replaces Arch's logo/splash.
